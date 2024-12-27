@@ -52,9 +52,20 @@ data/
 *.npz
 
 # Log files
-logs/
+logs/*
+!logs/archive/
+logs/archive/*
 *.log
-experiment_*.log
+nohup.out
 
 # Experiment results
-results/
+results/*
+!results/archive/
+results/archive/*
+*.csv
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store

@@ -23,9 +23,17 @@ def setup_logging(timestamp):
     """Set up logging configuration."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     log_dir = os.path.join(base_dir, 'logs')
+    archive_dir = os.path.join(log_dir, 'archive')
     os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(archive_dir, exist_ok=True)
     
     log_file = os.path.join(log_dir, f'experiment_{timestamp}.log')
+    
+    # Archive existing log file if it exists
+    if os.path.exists(log_file):
+        archive_file = os.path.join(archive_dir, f'experiment_{timestamp}.log')
+        os.rename(log_file, archive_file)
+        print(f"Archived existing log to {archive_file}")
     
     # Configure logging with both file and console output
     logging.basicConfig(
@@ -72,27 +80,38 @@ def cleanup_test_files():
     
     # Handle results directory
     results_dir = os.path.join(base_dir, 'results')
+    archive_dir = os.path.join(results_dir, 'archive')
     if os.path.exists(results_dir):
-        print(f"Cleaning results directory: {results_dir}")
+        print(f"Archiving results from: {results_dir}")
         try:
-            # Remove contents but keep directory
+            # Create archive directory if it doesn't exist
+            os.makedirs(archive_dir, exist_ok=True)
+            
+            # Move files to archive
             for item in os.listdir(results_dir):
+                if item == 'archive':  # Skip archive directory
+                    continue
+                    
                 item_path = os.path.join(results_dir, item)
+                archive_path = os.path.join(archive_dir, item)
+                
                 if os.path.isfile(item_path):
-                    os.remove(item_path)
+                    os.rename(item_path, archive_path)
                 elif os.path.isdir(item_path):
-                    shutil.rmtree(item_path)
-            print("Results directory cleaned")
+                    shutil.move(item_path, archive_path)
+            print("Results archived")
         except Exception as e:
-            print(f"Error cleaning results directory: {e}")
+            print(f"Error archiving results: {e}")
     else:
         os.makedirs(results_dir)
+        os.makedirs(archive_dir)
         print(f"Created results directory: {results_dir}")
     
     # Handle logs directory
     logs_dir = os.path.join(base_dir, 'logs')
+    archive_dir = os.path.join(logs_dir, 'archive')
     if os.path.exists(logs_dir):
-        print(f"Cleaning logs directory: {logs_dir}")
+        print(f"Archiving logs from: {logs_dir}")
         try:
             # Force close any open log files
             logging.shutdown()
@@ -101,18 +120,27 @@ def cleanup_test_files():
                 handler.close()
                 logging.root.removeHandler(handler)
             
-            # Remove contents but keep directory
+            # Create archive directory if it doesn't exist
+            os.makedirs(archive_dir, exist_ok=True)
+            
+            # Move files to archive
             for item in os.listdir(logs_dir):
+                if item == 'archive':  # Skip archive directory
+                    continue
+                    
                 item_path = os.path.join(logs_dir, item)
+                archive_path = os.path.join(archive_dir, item)
+                
                 if os.path.isfile(item_path):
-                    os.remove(item_path)
+                    os.rename(item_path, archive_path)
                 elif os.path.isdir(item_path):
-                    shutil.rmtree(item_path)
-            print("Logs directory cleaned")
+                    shutil.move(item_path, archive_path)
+            print("Logs archived")
         except Exception as e:
-            print(f"Error cleaning logs directory: {e}")
+            print(f"Error archiving logs: {e}")
     else:
         os.makedirs(logs_dir)
+        os.makedirs(archive_dir)
         print(f"Created logs directory: {logs_dir}")
     
     print("Cleanup completed")
@@ -137,11 +165,10 @@ def main():
         args = parse_args()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Clean up previous test files if in test mode
-        if args.test:
-            print("\nRunning in test mode - cleaning up previous files...")
-            cleanup_test_files()
-            print("Cleanup finished - starting evaluation\n")
+        # Archive previous files (in both test and regular modes)
+        print("\nArchiving previous files...")
+        cleanup_test_files()
+        print("Archiving finished - starting evaluation\n")
         
         # Set up logging
         log_file = setup_logging(timestamp)
@@ -154,6 +181,10 @@ def main():
         # Get appropriate configurations based on mode
         print("Getting configurations...")
         config = config_manager.get_test_configs() if args.test else config_manager.get_full_configs()
+        
+        # Set the results filename with the same timestamp
+        config.results_file = f'experiment_results_{timestamp}.csv'
+        
         print(f"\nEvaluation Plan:")
         print(f"- Datasets: {[d.name for d in config.datasets]}")
         print(f"- Classifiers: {config.classifiers}")
@@ -164,9 +195,9 @@ def main():
         
         # Initialize and run experiment
         runner = ExperimentRunner(config=config, test_mode=args.test)
-        runner.run()
+        runner.run(timestamp=timestamp)  # Pass the timestamp to the runner
         print("\nExperiment completed successfully")
-        print(f"Results saved to: {os.path.join('results', f'experiment_results_{timestamp}.csv')}")
+        print(f"Results saved to: {os.path.join('results', config.results_file)}")
         
     except KeyboardInterrupt:
         print("\nEvaluation interrupted by user. Cleaning up...")

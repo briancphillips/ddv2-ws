@@ -76,12 +76,13 @@ class ConfigurationManager:
         self.seed = random.randint(1, 10000)
         
     def get_test_configs(self) -> ExperimentConfig:
-        """Get test configurations with reduced dataset sizes and all flip types."""
+        """Get test configurations with reduced dataset sizes and all attack types."""
         # Create a list to store all dataset configs
         all_datasets = []
         
-        # For each dataset, create three configurations, one for each flip type
+        # For each dataset, create configurations for each attack type
         for name, config in DATASET_CONFIGS.items():
+            # Add label flipping configurations
             for flip_mode in ATTACK_METHODS['label_flipping']['modes']:
                 # Set target and source classes based on flip mode
                 target_class = 0 if flip_mode in ['random_to_target', 'source_to_target'] else None
@@ -100,6 +101,21 @@ class ConfigurationManager:
                     }
                 )
                 all_datasets.append(dataset_config)
+            
+            # Add PGD configuration
+            dataset_config = DatasetConfig(
+                name=name,
+                dataset_type=config['type'],
+                sample_size=TEST_SAMPLE_SIZES[name],
+                attack_params={
+                    'poison_rates': POISON_RATES,
+                    'type': 'pgd',
+                    'eps': ATTACK_METHODS['pgd']['eps'],
+                    'alpha': ATTACK_METHODS['pgd']['alpha'],
+                    'iters': ATTACK_METHODS['pgd']['iters']
+                }
+            )
+            all_datasets.append(dataset_config)
         
         return ExperimentConfig(
             datasets=all_datasets,
@@ -115,8 +131,9 @@ class ConfigurationManager:
         # Create a list to store all dataset configs
         all_datasets = []
         
-        # For each dataset, create three configurations, one for each flip type
+        # For each dataset, create configurations for each attack type
         for name, config in DATASET_CONFIGS.items():
+            # Add label flipping configurations
             for flip_mode in ATTACK_METHODS['label_flipping']['modes']:
                 # Set target and source classes based on flip mode
                 target_class = 0 if flip_mode in ['random_to_target', 'source_to_target'] else None
@@ -135,6 +152,21 @@ class ConfigurationManager:
                     }
                 )
                 all_datasets.append(dataset_config)
+            
+            # Add PGD configuration
+            dataset_config = DatasetConfig(
+                name=name,
+                dataset_type=config['type'],
+                sample_size=DATASET_SIZES[name],  # Use full dataset sizes
+                attack_params={
+                    'poison_rates': POISON_RATES,
+                    'type': 'pgd',
+                    'eps': ATTACK_METHODS['pgd']['eps'],
+                    'alpha': ATTACK_METHODS['pgd']['alpha'],
+                    'iters': ATTACK_METHODS['pgd']['iters']
+                }
+            )
+            all_datasets.append(dataset_config)
         
         return ExperimentConfig(
             datasets=all_datasets,

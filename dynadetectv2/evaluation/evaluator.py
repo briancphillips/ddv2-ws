@@ -204,15 +204,22 @@ class ModelEvaluator:
         self.results.append(result)
         
     def save_results(self, timestamp: str) -> None:
-        """Save results to CSV file."""
+        """Save results to CSV file and archive old results."""
         if not self.results:
             return
             
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         results_dir = os.path.join(base_dir, 'results')
+        archive_dir = os.path.join(results_dir, 'archive')
         os.makedirs(results_dir, exist_ok=True)
+        os.makedirs(archive_dir, exist_ok=True)
         
+        # Archive existing results if they exist
         results_file = os.path.join(results_dir, f'experiment_results_{timestamp}.csv')
+        if os.path.exists(results_file):
+            archive_file = os.path.join(archive_dir, f'experiment_results_{timestamp}.csv')
+            os.rename(results_file, archive_file)
+            logging.info(f"Archived existing results to {archive_file}")
         
         # Get all unique keys from all results
         fieldnames = set()
@@ -235,6 +242,7 @@ class ModelEvaluator:
             if f.tell() == 0:  # File is empty
                 writer.writeheader()
             writer.writerows(self.results)
+        logging.info(f"Saved results to {results_file}")
 
 
 class DatasetEvaluator(ModelEvaluator):

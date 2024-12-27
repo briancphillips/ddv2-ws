@@ -1,101 +1,124 @@
-# DynaDetect v2 Refactoring Documentation
+# DynaDetect v2 Refactoring Guide
 
-## Architecture Overview
+## Completed Refactoring
 
-The project has been refactored into a clean, modular architecture with clear separation of concerns:
+### Core Architecture
 
-### Core Package (`dynadetectv2/`)
+- [x] Reorganized project structure for better modularity
+- [x] Separated concerns between core components
+- [x] Implemented proper package hierarchy
+- [x] Removed legacy code and unused modules
 
-- **Core Module** (`core/`)
-  - `dataset.py`: Dataset handling and preprocessing
-  - `models.py`: Model implementations and factory
-  - `trainer.py`: Training logic and utilities
-- **Attacks** (`attacks/`): Attack implementations
-- **Evaluation** (`evaluation/`): Metrics and analysis
-- **Config** (`config/`): Configuration management
-- **Main** (`main.py`): Entry point and orchestration
+### Dataset Handling
 
-### Supporting Modules (`experiments/`)
+- [x] Switched to torchvision's GTSRB dataset implementation
+- [x] Standardized dataset interfaces
+- [x] Implemented feature caching system
+- [x] Improved train/val/test splitting logic
 
-- **Results Management** (`results_management/`)
-  - Results collection and storage
-  - Visualization utilities
-- **Utils** (`utils/`)
-  - Memory tracking
-  - Performance monitoring
-- **Evaluation Runner** (`run_full_evaluation.py`)
+### Model Implementation
 
-## Key Changes
+- [x] Standardized model interfaces
+- [x] Improved GPU acceleration support
+- [x] Added model factory pattern
+- [x] Implemented proper error handling
 
-1. **Package Structure**
+### Attack Implementation
 
-   - Moved from monolithic design to modular package
-   - Clear separation between core and supporting functionality
-   - Proper Python package organization
+- [x] Standardized attack interfaces
+- [x] Improved label flipping implementation
+- [x] Added attack caching system
+- [x] Fixed edge cases in source-to-target flipping
 
-2. **Code Organization**
+## Ongoing Refactoring
 
-   - Separated concerns into distinct modules
-   - Removed redundant code
-   - Improved code reusability
+### Performance Optimization
 
-3. **Testing**
+- [ ] Memory management improvements
+  - [ ] Reduce memory footprint during feature extraction
+  - [ ] Optimize cache usage
+  - [ ] Implement memory-efficient data loading
+- [ ] GPU Acceleration
+  - [ ] Optimize GPU memory usage
+  - [ ] Improve batch processing
+  - [ ] Add GPU memory monitoring
 
-   - Added proper test infrastructure
-   - Implemented test fixtures
-   - Improved test coverage
+### Code Quality
 
-4. **Configuration**
+- [ ] Type Hints
+  - [ ] Add comprehensive type annotations
+  - [ ] Implement type checking in CI
+  - [ ] Document type conventions
+- [ ] Error Handling
+  - [ ] Implement custom exception hierarchy
+  - [ ] Add detailed error messages
+  - [ ] Improve error recovery
 
-   - Centralized configuration management
-   - Type-safe configuration objects
-   - Flexible experiment configuration
+### Testing
 
-5. **Results Management**
-   - Structured results collection
-   - Enhanced visualization capabilities
-   - Memory usage tracking
+- [ ] Test Coverage
+  - [ ] Add unit tests for core components
+  - [ ] Implement integration tests
+  - [ ] Add performance benchmarks
+- [ ] Test Infrastructure
+  - [ ] Set up automated testing
+  - [ ] Add test fixtures
+  - [ ] Implement test data generators
 
-## Design Decisions
+## Planned Refactoring
 
-1. **Core vs. Experiments**
+### Architecture Improvements
 
-   - Core functionality in `dynadetectv2/`
-   - Supporting tools in `experiments/`
-   - Clear boundary between framework and tools
+- [ ] Dependency Injection
+  - [ ] Implement IoC container
+  - [ ] Reduce coupling between components
+  - [ ] Improve testability
+- [ ] Configuration Management
+  - [ ] Implement configuration validation
+  - [ ] Add configuration presets
+  - [ ] Improve configuration inheritance
 
-2. **Configuration System**
+### Code Organization
 
-   - Use of dataclasses for type safety
-   - Hierarchical configuration structure
-   - Flexible parameter management
+- [ ] Module Structure
+  - [ ] Reorganize utility functions
+  - [ ] Improve module dependencies
+  - [ ] Standardize module interfaces
+- [ ] Documentation
+  - [ ] Add docstring conventions
+  - [ ] Generate API documentation
+  - [ ] Improve code comments
 
-3. **Results Management**
+### Feature Improvements
 
-   - Standardized results format
-   - Comprehensive metrics collection
-   - Extensible visualization system
+- [ ] Attack Framework
+  - [ ] Abstract base classes for attacks
+  - [ ] Improved attack configuration
+  - [ ] Better attack metrics
+- [ ] Model Framework
+  - [ ] Abstract base classes for models
+  - [ ] Improved model configuration
+  - [ ] Better model metrics
 
-4. **Testing Strategy**
-   - Unit tests for core components
-   - Integration tests for workflows
-   - Fixtures for common setup
+## Technical Debt
 
-## Future Considerations
+### High Priority
 
-1. **Performance Optimization**
+- [ ] Memory leaks in feature extraction
+- [ ] GPU memory management
+- [ ] Inconsistent error handling
+- [ ] Missing type hints
 
-   - Memory usage optimization
-   - Training speed improvements
-   - GPU utilization
+### Medium Priority
 
-2. **Extensibility**
+- [ ] Duplicate code in dataset handling
+- [ ] Complex configuration logic
+- [ ] Inconsistent logging
+- [ ] Test coverage gaps
 
-   - Plugin system for new attacks
-   - Custom model support
-   - Dataset extensions
+### Low Priority
 
-3. **Documentation**
-   - API documentation
-   - Usage examples
-   - Architecture guides
+- [ ] Documentation updates
+- [ ] Code style consistency
+- [ ] Unused parameters
+- [ ] Legacy compatibility

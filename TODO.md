@@ -1,106 +1,106 @@
-# DynaDetect v2 TODO List
+# DynaDetect v2 Development Status
 
-## Completed
+## Completed Tasks
 
-- [x] Core framework implementation
-  - [x] Dataset handling and preprocessing
-  - [x] Model implementations
-  - [x] Training utilities
-  - [x] Attack implementations
-- [x] Project restructuring
-  - [x] Proper package organization
-  - [x] Clean separation of concerns
-  - [x] Removal of legacy code
-- [x] Testing infrastructure
-  - [x] Basic test suite
-  - [x] Test fixtures
-  - [x] CI setup
-- [x] Results management
-  - [x] Visualization tools
-  - [x] Results collection
-  - [x] Memory tracking
-- [x] Dataset Improvements
-  - [x] GTSRB dataset structure standardization
-  - [x] Consistent directory organization
-  - [x] Robust CSV handling for test set
-- [x] Configuration Updates
-  - [x] Updated to use full dataset sizes
-  - [x] Included all label flipping attack modes
-  - [x] Optimized configuration for overnight runs
-- [x] Performance Optimizations
-  - [x] GPU acceleration for SVM model
-  - [x] GPU acceleration for Logistic Regression
-  - [x] GPU acceleration for Random Forest
-  - [x] GPU acceleration for KNeighbors
-  - [x] Feature scaling for memory efficiency
-  - [x] GPU acceleration for feature extraction
-  - [x] GPU acceleration for anomaly detection
-  - [x] Caching system for feature extraction
-  - [x] Caching system for sample weights
-  - [x] Caching system for attack generation
+### Core Implementation
+
+- [x] Basic project structure and organization
+- [x] Dataset handling implementation
+  - [x] GTSRB dataset support
+  - [x] CIFAR-100 dataset support
+  - [x] ImageNette dataset support
+  - [x] Feature extraction and caching
+  - [x] Dataset splitting (train/val)
+- [x] Model implementations
+  - [x] SVM
+  - [x] Logistic Regression
+  - [x] Random Forest
+  - [x] K-Nearest Neighbors
+- [x] Training implementations
+  - [x] Standard training mode
+  - [x] DynaDetect training mode
+  - [x] Sample weighting support
+  - [x] Early stopping
+
+### Attack Implementation
+
+- [x] Label flipping attacks
+  - [x] Random-to-random flipping
+  - [x] Random-to-target flipping
+  - [x] Source-to-target flipping
+  - [x] Edge case handling for source class preservation
+
+### Evaluation Framework
+
+- [x] Basic metrics implementation
+- [x] Results logging and storage
+- [x] Experiment configuration management
+- [x] Full evaluation pipeline
+- [x] Test mode for quick validation
 
 ## In Progress
 
-- [ ] Running full evaluation with:
-  - [ ] Full dataset sizes
-  - [ ] All label flipping modes (random_to_random, random_to_target, source_to_target)
-  - [ ] All classifiers with GPU acceleration
-  - [ ] Comprehensive metrics collection
+### Core Improvements
 
-## High Priority
+- [ ] Memory optimization for large datasets
+- [ ] GPU acceleration improvements
+- [ ] Parallel processing support
+- [ ] Better error handling and recovery
 
-- [x] GTSRB Dataset Fix
-  - [x] Switched to torchvision's GTSRB dataset
-  - [x] Fixed class distribution issue
-  - [x] Ensured all 43 classes are available
-  - [x] Fixed targets attribute handling for train/val/test splits
-- [ ] SVM Optimization
-  - [ ] Implement GPU-accelerated SVM (ThunderSVM/cuSVM)
-  - [ ] Add model checkpointing for SVM
-  - [ ] Experiment with further dimensionality reduction
-  - [ ] Cache intermediate SVM training results
-- [ ] Performance Optimization
-  - [ ] Memory leak in feature extraction
-  - [ ] Data loading pipeline efficiency
-  - [ ] Training speed improvements
-- [ ] Model Improvements
-  - [ ] Cross-validation for hyperparameters
-  - [ ] Early stopping implementation
-  - [ ] Model checkpointing
-- [ ] Testing
-  - [ ] Edge case coverage
-  - [ ] Integration tests
-  - [ ] Performance benchmarks
+### Attack Implementation
 
-## Medium Priority
+- [ ] PGD attack implementation
+- [ ] Noise injection attacks
+- [ ] Backdoor attacks
+- [ ] Custom attack interface
 
-- [ ] Feature Additions
-  - [ ] Data augmentation pipeline
-  - [ ] Additional attack methods
-  - [ ] More visualization options
-- [ ] Documentation
-  - [ ] API documentation
-  - [ ] Usage examples
-  - [ ] Architecture overview
-- [ ] Code Quality
-  - [ ] Type hints completion
-  - [ ] Error handling improvements
-  - [ ] Logging enhancements
+### Evaluation Framework
 
-## Low Priority
+- [ ] Advanced metrics implementation
+  - [ ] ROC curves
+  - [ ] Confusion matrices
+  - [ ] Per-class analysis
+- [ ] Real-time monitoring tools
+- [ ] Automated result analysis
+- [ ] Performance benchmarking
 
-- [ ] Infrastructure
-  - [ ] Distributed training support
-  - [ ] Docker containerization
-  - [ ] Cloud deployment guides
-- [ ] Developer Experience
-  - [ ] Development environment setup
-  - [ ] Contributing guidelines
-  - [ ] Code style guide
+### Documentation
 
-## Bugs
+- [ ] API documentation
+- [ ] Usage examples
+- [ ] Contributing guidelines
+- [ ] Architecture documentation
 
-- [ ] Memory leak in feature extraction
-- [ ] Convergence warnings in LogisticRegression
-- [ ] Undefined metrics in evaluation
-- [ ] GPU memory management issues
+## Future Tasks
+
+### Core Features
+
+- [ ] Support for additional datasets
+  - [ ] MNIST
+  - [ ] CIFAR-10
+  - [ ] Custom dataset interface
+- [ ] Additional model architectures
+  - [ ] Neural Networks
+  - [ ] Decision Trees
+  - [ ] Ensemble methods
+
+### Analysis Tools
+
+- [ ] Visualization dashboard
+- [ ] Attack effectiveness analysis
+- [ ] Defense mechanism evaluation
+- [ ] Comparative analysis tools
+
+### Infrastructure
+
+- [ ] CI/CD pipeline
+- [ ] Automated testing
+- [ ] Code quality checks
+- [ ] Performance profiling
+
+### Research
+
+- [ ] New attack detection methods
+- [ ] Adaptive defense mechanisms
+- [ ] Transfer learning analysis
+- [ ] Model robustness metrics
