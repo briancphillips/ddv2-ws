@@ -182,3 +182,15 @@ class DynaDetectTrainer:
         logging.info(f"Found {num_outliers} outliers ({num_outliers/len(features)*100:.1f}%)")
         
         return outliers_np
+        
+    def train_model(self, X_train, y_train, poison_rate=None):
+        """Train the model on the given data."""
+        if hasattr(self.model, 'set_poison_rate'):
+            self.model.set_poison_rate(poison_rate)
+            
+        start_time = time.time()
+        self.model.fit(X_train, y_train)
+        training_time = time.time() - start_time
+        
+        logging.info(f"Model training completed in {training_time:.2f}s")
+        return training_time

@@ -17,6 +17,7 @@ from .metrics import calculate_metrics
 from ..config import DatasetConfig
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression, SGDClassifier
 
 
 class TimeoutError(Exception):
@@ -43,7 +44,7 @@ class time_limit:
 class ModelEvaluator:
     """Handles model evaluation and metrics computation."""
     
-    def __init__(self, classifier_name: str = 'RF', mode: str = 'standard'):
+    def __init__(self, classifier_name: str = 'RF', mode: str = 'standard', timeout: int = 600):
         """Initialize model evaluator."""
         self.classifier_name = classifier_name
         self.mode = mode
@@ -54,6 +55,7 @@ class ModelEvaluator:
         self.attack_params = None
         self.poison_rate = None
         self.results = []
+        self.timeout = timeout
         
     def train_model(
         self,
@@ -61,12 +63,14 @@ class ModelEvaluator:
         features: np.ndarray,
         labels: np.ndarray,
         sample_weights: Optional[np.ndarray] = None,
-        timeout: int = 60  # 60 second timeout
+        timeout: int = 600  # Increased to 10 minutes
     ) -> BaseEstimator:
         """Train the model with given features and labels."""
+        logging.info(f"Fitting {type(model).__name__} model with data shape: {features.shape}")
+        
         try:
             with time_limit(timeout):
-                if sample_weights is not None and not isinstance(model, (KNeighborsClassifier, SVC)):
+                if sample_weights is not None and not isinstance(model, (KNeighborsClassifier)):
                     # Ensure sample_weights matches the number of samples
                     if len(sample_weights) != len(features):
                         logging.warning(f"Sample weights length ({len(sample_weights)}) does not match features length ({len(features)}). Ignoring weights.")
@@ -77,8 +81,8 @@ class ModelEvaluator:
                     model.fit(features, labels)
                 return model
         except TimeoutError:
-            logging.warning(f"Model training timed out after {timeout} seconds. Using simpler model.")
-            # Fall back to a simpler model
+            logging.warning(f"Model training timed out after {timeout} seconds. Using simpler configuration.")
+            # Fall back to a simpler model configuration
             if isinstance(model, LogisticRegression):
                 model = LogisticRegression(
                     multi_class='ovr',  # One-vs-rest instead of multinomial
@@ -87,8 +91,40 @@ class ModelEvaluator:
                     tol=1e-2,
                     n_jobs=-1
                 )
-            model.fit(features, labels)
-            return model
+            elif isinstance(model, SGDClassifier):
+                # For SVM (SGDClassifier), use an even simpler configuration
+                logging.info("Creating simplified SGDClassifier configuration")
+                model = SGDClassifier(
+                    loss='hinge',
+                    penalty='l2',
+                    alpha=0.001,  # Stronger regularization
+                    max_iter=25,   # Even fewer iterations
+                    tol=1e-1,     # Even looser tolerance
+                    learning_rate='constant',
+                    eta0=0.1,     # Higher learning rate
+                    early_stopping=True,
+                    validation_fraction=0.1,
+                    n_iter_no_change=2,  # Fewer iterations before early stopping
+                    class_weight='balanced',
+                    n_jobs=-1,
+                    verbose=1     # Enable verbose output
+                )
+                
+            try:
+                logging.info("Attempting to fit with simplified model configuration")
+                with time_limit(timeout // 2):  # Use half the original timeout for the simplified model
+                    if sample_weights is not None and not isinstance(model, (KNeighborsClassifier)):
+                        model.fit(features, labels, sample_weight=sample_weights)
+                    else:
+                        model.fit(features, labels)
+                    logging.info("Successfully fitted simplified model")
+                    return model
+            except TimeoutError:
+                logging.error("Simplified model also timed out. This is a critical issue that needs investigation.")
+                raise
+            except Exception as e:
+                logging.error(f"Error fitting simplified model: {str(e)}")
+                raise
         except Exception as e:
             logging.error(f"Error during model training: {str(e)}")
             raise
@@ -253,7 +289,9 @@ class DatasetEvaluator(ModelEvaluator):
         attack_params = self.config.attack_params or {}
         poison_rates = attack_params.get('poison_rates', [0.0])
         attack_type = attack_params.get('type', 'none')
-        attack_modes = attack_params.get('modes', ['random_to_random'])
+        attack_mode = attack_params.get('mode', 'random_to_random')
+        target_class = attack_params.get('target_class', None)
+        source_class = attack_params.get('source_class', None)
         
         # Initialize model once
         model = ModelFactory.create_model(self.classifier_name)
@@ -266,11 +304,13 @@ class DatasetEvaluator(ModelEvaluator):
             # Apply poisoning if rate > 0
             if poison_rate > 0:
                 t0 = time.time()
-                poisoned_labels = self.dataset_handler.apply_label_flipping_to_labels(
-                    train_labels.copy(),
-                    poison_rate=poison_rate,
-                    flip_type=attack_modes[0]
-                )
+                poisoned_labels = self.dataset_handler.label_flipping(
+                    labels=train_labels.copy(),
+                    mode=attack_mode,
+                    target_class=target_class,
+                    source_class=source_class,
+                    poison_rate=poison_rate
+                )[0]
                 logging.info(f"Label flipping completed in {time.time() - t0:.2f}s")
             else:
                 poisoned_labels = train_labels
@@ -283,18 +323,15 @@ class DatasetEvaluator(ModelEvaluator):
             # Train model with timeout
             t0 = time.time()
             try:
-                self.model = self.train_model(model, train_features, poisoned_labels, train_weights, timeout=30)
+                self.model = self.train_model(model, train_features, poisoned_labels, train_weights, timeout=600)  # Increased to 10 minutes
             except TimeoutError:
-                logging.warning("Model training timed out, using simpler model configuration")
-                # Fall back to simpler model
-                model = LogisticRegression(
-                    multi_class='ovr',
-                    solver='lbfgs',
-                    max_iter=50,
-                    tol=1e-1,
-                    n_jobs=-1
-                )
-                self.model = self.train_model(model, train_features, poisoned_labels, train_weights, timeout=30)
+                logging.warning("Model training timed out, using simpler configuration")
+                # Create a new model instance with the same class
+                model = ModelFactory.create_model(self.classifier_name)
+                self.model = self.train_model(model, train_features, poisoned_labels, train_weights, timeout=600)  # Increased to 10 minutes
+            except Exception as e:
+                logging.error(f"Error during model training: {str(e)}")
+                raise
             logging.info(f"Model training completed in {time.time() - t0:.2f}s")
             
             # Make predictions
@@ -310,7 +347,7 @@ class DatasetEvaluator(ModelEvaluator):
                 modification_method=attack_type,
                 num_poisoned=int(len(train_labels) * poison_rate) if poison_rate > 0 else 0,
                 poisoned_classes=[],  # Will be populated by apply_label_flipping
-                flip_type=attack_modes[0] if poison_rate > 0 else 'none',
+                flip_type=attack_mode if poison_rate > 0 else 'none',
                 latency=latency,
                 iteration=iteration,
                 classifier_name=self.classifier_name,

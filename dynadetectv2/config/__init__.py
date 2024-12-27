@@ -27,8 +27,8 @@ class ExperimentConfig:
 
 # Constants
 DATASET_CONFIGS = {
-    'CIFAR100': {'type': 'image', 'num_classes': 100},
     'GTSRB': {'type': 'image', 'num_classes': 43},
+    'CIFAR100': {'type': 'image', 'num_classes': 100},
     'ImageNette': {'type': 'image', 'num_classes': 10},
 }
 
@@ -45,16 +45,24 @@ ATTACK_METHODS = {
     }
 }
 
+# Full dataset sizes
+DATASET_SIZES = {
+    'CIFAR100': 50000,  # Full training set size
+    'GTSRB': 39209,     # Full training set size
+    'ImageNette': 9469  # Full training set size
+}
+
+# Test sample sizes (reduced for faster testing)
 TEST_SAMPLE_SIZES = {
-    'CIFAR100': 1000,
-    'GTSRB': 1000,
-    'ImageNette': 1000
+    'CIFAR100': 5000,
+    'GTSRB': 5000,
+    'ImageNette': 5000
 }
 
 CLASSIFIERS = [
+    'SVM',
     'LogisticRegression',
     'RandomForest',
-    'SVM',
     'KNeighbors'
 ]
 
@@ -68,43 +76,68 @@ class ConfigurationManager:
         self.seed = random.randint(1, 10000)
         
     def get_test_configs(self) -> ExperimentConfig:
-        """Get test configurations with reduced dataset sizes but full configuration options."""
-        datasets = [
-            DatasetConfig(
-                name=name,
-                dataset_type=config['type'],
-                sample_size=TEST_SAMPLE_SIZES[name],
-                attack_params={
-                    'poison_rates': POISON_RATES,
-                    'type': 'label_flipping',
-                    'modes': ['random_to_random']
-                }
-            )
-            for name, config in DATASET_CONFIGS.items()
-        ]
+        """Get test configurations with reduced dataset sizes and all flip types."""
+        # Create a list to store all dataset configs
+        all_datasets = []
+        
+        # For each dataset, create three configurations, one for each flip type
+        for name, config in DATASET_CONFIGS.items():
+            for flip_mode in ATTACK_METHODS['label_flipping']['modes']:
+                # Set target and source classes based on flip mode
+                target_class = 0 if flip_mode in ['random_to_target', 'source_to_target'] else None
+                source_class = 1 if flip_mode == 'source_to_target' else None
+                
+                dataset_config = DatasetConfig(
+                    name=name,
+                    dataset_type=config['type'],
+                    sample_size=TEST_SAMPLE_SIZES[name],
+                    attack_params={
+                        'poison_rates': POISON_RATES,
+                        'type': 'label_flipping',
+                        'mode': flip_mode,
+                        'target_class': target_class,
+                        'source_class': source_class
+                    }
+                )
+                all_datasets.append(dataset_config)
         
         return ExperimentConfig(
-            datasets=datasets,
-            classifiers=CLASSIFIERS,  # Use all classifiers
-            modes=MODES,  # Use all modes
-            iterations=1,  # Use 1 iteration for test mode
+            datasets=all_datasets,
+            classifiers=CLASSIFIERS,
+            modes=MODES,
+            iterations=1,
             seed=self.seed,
             results_file='test_results.csv'
         )
         
     def get_full_configs(self) -> ExperimentConfig:
         """Get full experiment configurations."""
-        datasets = [
-            DatasetConfig(
-                name=name,
-                dataset_type=config['type'],
-                attack_params={'poison_rates': POISON_RATES}
-            )
-            for name, config in DATASET_CONFIGS.items()
-        ]
+        # Create a list to store all dataset configs
+        all_datasets = []
+        
+        # For each dataset, create three configurations, one for each flip type
+        for name, config in DATASET_CONFIGS.items():
+            for flip_mode in ATTACK_METHODS['label_flipping']['modes']:
+                # Set target and source classes based on flip mode
+                target_class = 0 if flip_mode in ['random_to_target', 'source_to_target'] else None
+                source_class = 1 if flip_mode == 'source_to_target' else None
+                
+                dataset_config = DatasetConfig(
+                    name=name,
+                    dataset_type=config['type'],
+                    sample_size=DATASET_SIZES[name],  # Use full dataset sizes
+                    attack_params={
+                        'poison_rates': POISON_RATES,
+                        'type': 'label_flipping',
+                        'mode': flip_mode,
+                        'target_class': target_class,
+                        'source_class': source_class
+                    }
+                )
+                all_datasets.append(dataset_config)
         
         return ExperimentConfig(
-            datasets=datasets,
+            datasets=all_datasets,
             classifiers=CLASSIFIERS,
             modes=MODES,
             iterations=5,

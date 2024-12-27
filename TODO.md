@@ -23,9 +23,42 @@
   - [x] GTSRB dataset structure standardization
   - [x] Consistent directory organization
   - [x] Robust CSV handling for test set
+- [x] Configuration Updates
+  - [x] Updated to use full dataset sizes
+  - [x] Included all label flipping attack modes
+  - [x] Optimized configuration for overnight runs
+- [x] Performance Optimizations
+  - [x] GPU acceleration for SVM model
+  - [x] GPU acceleration for Logistic Regression
+  - [x] GPU acceleration for Random Forest
+  - [x] GPU acceleration for KNeighbors
+  - [x] Feature scaling for memory efficiency
+  - [x] GPU acceleration for feature extraction
+  - [x] GPU acceleration for anomaly detection
+  - [x] Caching system for feature extraction
+  - [x] Caching system for sample weights
+  - [x] Caching system for attack generation
+
+## In Progress
+
+- [ ] Running full evaluation with:
+  - [ ] Full dataset sizes
+  - [ ] All label flipping modes (random_to_random, random_to_target, source_to_target)
+  - [ ] All classifiers with GPU acceleration
+  - [ ] Comprehensive metrics collection
 
 ## High Priority
 
+- [x] GTSRB Dataset Fix
+  - [x] Switched to torchvision's GTSRB dataset
+  - [x] Fixed class distribution issue
+  - [x] Ensured all 43 classes are available
+  - [x] Fixed targets attribute handling for train/val/test splits
+- [ ] SVM Optimization
+  - [ ] Implement GPU-accelerated SVM (ThunderSVM/cuSVM)
+  - [ ] Add model checkpointing for SVM
+  - [ ] Experiment with further dimensionality reduction
+  - [ ] Cache intermediate SVM training results
 - [ ] Performance Optimization
   - [ ] Memory leak in feature extraction
   - [ ] Data loading pipeline efficiency

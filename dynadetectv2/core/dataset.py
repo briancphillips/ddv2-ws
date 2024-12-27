@@ -53,7 +53,7 @@ class NumericalDataset(Dataset):
 
 
 class GTSRBDataset(Dataset):
-    """GTSRB dataset class."""
+    """GTSRB dataset class using torchvision."""
     
     def __init__(self, root_dir, train=True, transform=None, val_split=0.2):
         """Initialize GTSRB dataset.
@@ -67,69 +67,56 @@ class GTSRBDataset(Dataset):
         self.root_dir = root_dir
         self.train = train
         self.transform = transform
-        self.data_folder = os.path.join(root_dir, 'GTSRB/Final_Training/Images')
-        self.samples = []
-        self.targets = []
         
-        # Load data from numbered folders
-        for class_id in range(43):
-            class_folder = os.path.join(self.data_folder, f"{class_id:05d}")
-            if not os.path.exists(class_folder):
-                continue
-                
-            # Read class-specific CSV file
-            csv_file = os.path.join(class_folder, f"GT-{class_id:05d}.csv")
-            if not os.path.exists(csv_file):
-                continue
-                
-            try:
-                df = pd.read_csv(csv_file, sep=';')
-                for _, row in df.iterrows():
-                    img_path = os.path.join(class_folder, str(row['Filename']))
-                    if os.path.exists(img_path):
-                        # Store ROI information along with the image path
-                        roi = (
-                            int(row['Roi.X1']), int(row['Roi.Y1']),
-                            int(row['Roi.X2']), int(row['Roi.Y2'])
-                        )
-                        self.samples.append((img_path, class_id, roi))
-                        self.targets.append(class_id)
-            except Exception as e:
-                logging.error(f"Error reading CSV file {csv_file}: {str(e)}")
-                continue
-        
-        # Split into train and validation sets
-        if len(self.samples) == 0:
-            raise RuntimeError(f"No valid samples found in {self.data_folder}")
-            
-        # Use stratified split to maintain class distribution
-        train_indices, val_indices = train_test_split(
-            range(len(self.samples)),
-            test_size=val_split,
-            stratify=self.targets,
-            random_state=42
+        # Use torchvision's GTSRB dataset
+        base_dataset = datasets.GTSRB(
+            root=root_dir,
+            split='train',  # Always load training data for train/val split
+            transform=transform,
+            download=True
         )
         
-        # Select appropriate indices based on train flag
-        indices = train_indices if train else val_indices
-        self.samples = [self.samples[i] for i in indices]
-        self.targets = np.array([self.targets[i] for i in indices])
-    
+        if train is not None:  # Handle train/val split
+            # Get all targets
+            all_targets = []
+            for _, target in base_dataset:
+                all_targets.append(target)
+            all_targets = torch.tensor(all_targets)
+            
+            # Split into train and validation sets
+            train_size = int((1 - val_split) * len(base_dataset))
+            val_size = len(base_dataset) - train_size
+            train_dataset, val_dataset = torch.utils.data.random_split(
+                base_dataset, 
+                [train_size, val_size],
+                generator=torch.Generator().manual_seed(42)
+            )
+            
+            # Set the dataset based on train parameter
+            self.dataset = train_dataset if train else val_dataset
+            
+            # Store targets for the split
+            indices = self.dataset.indices
+            self.targets = [all_targets[i].item() for i in indices]
+        else:  # Use test set
+            test_dataset = datasets.GTSRB(
+                root=root_dir,
+                split='test',
+                transform=transform,
+                download=True
+            )
+            self.dataset = test_dataset
+            # Get all targets for test set
+            all_targets = []
+            for _, target in test_dataset:
+                all_targets.append(target)
+            self.targets = all_targets
+        
     def __len__(self):
-        return len(self.samples)
+        return len(self.dataset)
     
     def __getitem__(self, idx):
-        img_path, target, roi = self.samples[idx]
-        img = Image.open(img_path)
-        
-        # Crop to ROI if available
-        if roi is not None:
-            x1, y1, x2, y2 = roi
-            img = img.crop((x1, y1, x2, y2))
-        
-        if self.transform:
-            img = self.transform(img)
-            
+        img, target = self.dataset[idx]
         return img, target
 
 
@@ -155,26 +142,13 @@ class DatasetHandler:
             self.setup_gtsrb()
 
     def setup_gtsrb(self):
-        """Download and set up GTSRB dataset if it doesn't exist."""
+        """Set up GTSRB dataset using torchvision."""
         # Create dataset directory
         dataset_dir = os.path.join(self.root_dir, '.datasets/gtsrb')
         os.makedirs(dataset_dir, exist_ok=True)
         
-        # Download training data
-        train_url = 'https://benchmark.ini.rub.de/Dataset/GTSRB_Final_Training_Images.zip'
-        train_zip = os.path.join(dataset_dir, 'GTSRB_Final_Training_Images.zip')
-        if not os.path.exists(train_zip):
-            logging.info("Downloading GTSRB training data...")
-            response = requests.get(train_url, stream=True)
-            with open(train_zip, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        
-        # Extract training data
-        if not os.path.exists(os.path.join(dataset_dir, 'GTSRB/Final_Training')):
-            logging.info("Extracting GTSRB training data...")
-            with zipfile.ZipFile(train_zip, 'r') as zip_ref:
-                zip_ref.extractall(dataset_dir)
+        # The dataset will be downloaded automatically when creating GTSRBDataset
+        logging.info("GTSRB dataset will be downloaded through torchvision if needed")
 
     def get_dataset_type(self):
         """Get dataset type."""
@@ -282,6 +256,7 @@ class DatasetHandler:
                 dataset.targets = np.array([dataset.dataset.targets[i] for i in indices])
                 
         elif self.dataset_name == "GTSRB":
+            # Use our custom GTSRB dataset implementation
             dataset = GTSRBDataset(
                 root_dir=os.path.join(self.root_dir, '.datasets/gtsrb'),
                 train=(split == 'train'),
@@ -295,7 +270,7 @@ class DatasetHandler:
                 indices = self.get_stratified_indices(dataset, sample_size)
                 dataset = Subset(dataset, indices)
                 # Store targets for subset
-                dataset.targets = dataset.dataset.targets[dataset.indices]
+                dataset.targets = np.array([dataset.dataset.targets[i] for i in indices])
         else:
             raise ValueError(f"Unsupported dataset: {self.dataset_name}")
             
@@ -407,12 +382,11 @@ class DatasetHandler:
         unique_labels = np.unique(labels)
         original_labels = labels.copy()
         num_to_poison = int(len(labels) * poison_rate)
-        poison_indices = np.random.choice(len(labels), num_to_poison, replace=False)
-
         new_labels = labels.copy()
         poisoned_classes = set()
 
         if mode == 'random_to_random':
+            poison_indices = np.random.choice(len(labels), num_to_poison, replace=False)
             for idx in poison_indices:
                 new_label = np.random.choice([l for l in unique_labels if l != labels[idx]])
                 new_labels[idx] = new_label
@@ -421,6 +395,7 @@ class DatasetHandler:
         elif mode == 'random_to_target':
             if target_class is None:
                 raise ValueError("target_class must be specified for 'random_to_target' mode.")
+            poison_indices = np.random.choice(len(labels), num_to_poison, replace=False)
             for idx in poison_indices:
                 if labels[idx] != target_class:
                     new_labels[idx] = target_class
@@ -431,22 +406,39 @@ class DatasetHandler:
                 raise ValueError("Both source_class and target_class must be specified for 'source_to_target' mode.")
             if source_class == target_class:
                 raise ValueError("source_class and target_class must be different.")
+                
+            # Get indices of samples in source class
             source_indices = np.where(labels == source_class)[0]
-            num_to_flip = min(len(source_indices), num_to_poison)
-            flip_indices = np.random.choice(source_indices, num_to_flip, replace=False)
-            new_labels[flip_indices] = target_class
-            poisoned_classes.add(int(source_class))
-            poisoned_classes.add(int(target_class))
-
-            logging.info(f"Source class: {source_class}, Target class: {target_class}")
-            logging.info(f"Number of samples in source class: {len(source_indices)}")
-            logging.info(f"Number of samples to poison based on rate: {num_to_poison}")
-            logging.info(f"Actual number of labels flipped: {num_to_flip}")
+            num_source_samples = len(source_indices)
+            
+            # Calculate the number of samples to flip, limited by available samples
+            # Always keep at least one sample in the source class to prevent class elimination
+            num_to_flip = min(num_source_samples - 1, num_to_poison) if num_source_samples > 0 else 0
+            
+            # Log detailed information about the flipping operation
+            logging.info(f"Label flipping details:")
+            logging.info(f"- Source class: {source_class}")
+            logging.info(f"- Target class: {target_class}")
+            logging.info(f"- Available samples in source class: {num_source_samples}")
+            logging.info(f"- Requested samples to poison: {num_to_poison}")
+            logging.info(f"- Actual samples to flip: {num_to_flip}")
+            logging.info(f"- Samples remaining in source class: {num_source_samples - num_to_flip}")
+            
+            # Only proceed if we have samples to flip
+            if num_to_flip > 0:
+                # Randomly select indices to flip
+                flip_indices = np.random.choice(source_indices, num_to_flip, replace=False)
+                new_labels[flip_indices] = target_class
+                poisoned_classes.add(int(source_class))
+                poisoned_classes.add(int(target_class))
+                logging.info(f"Successfully flipped {num_to_flip} labels from class {source_class} to {target_class}")
+            else:
+                logging.warning(f"No labels were flipped: insufficient samples in source class {source_class}")
         else:
             raise ValueError("Invalid mode specified for label flipping.")
 
         num_poisoned = np.sum(original_labels != new_labels)
-        logging.info(f"Number of labels flipped: {num_poisoned}")
+        logging.info(f"Total number of labels flipped: {num_poisoned}")
 
         attack_params = {
             'type': mode,

@@ -13,8 +13,27 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import logging
 import time
+import psutil
+import os
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class BaseModel:
+    """Base class for all models."""
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        
+    def fit(self, X, y, sample_weight=None):
+        raise NotImplementedError
+        
+    def predict(self, X):
+        raise NotImplementedError
+        
+    def predict_proba(self, X):
+        raise NotImplementedError
 
 
 class SoftKNN(nn.Module):
@@ -163,94 +182,568 @@ class SoftKNN(nn.Module):
         return metrics
 
 
-class ClassifierWrapper(BaseEstimator, ClassifierMixin):
+class ClassifierWrapper:
     """Base wrapper for scikit-learn classifiers."""
     
-    def __init__(self, model_class, model_name, **kwargs):
-        """Initialize wrapper."""
-        self.model_name = model_name
-        self.use_dynadetect = kwargs.pop('use_dynadetect', False)
-        self.detection_threshold = kwargs.pop('detection_threshold', 0.5)
+    def __init__(self, model_class, name: str, **kwargs):
+        """Initialize the wrapper."""
+        logging.info(f"Initializing {name} wrapper with params: {kwargs}")
         self.model = model_class(**kwargs)
-    
-    def fit(self, X, y):
-        """Fit model."""
-        return self.model.fit(X, y)
-    
-    def predict(self, X):
-        """Predict using model."""
-        predictions = self.model.predict(X)
-        if self.use_dynadetect:
-            # Apply DynaDetect logic here
-            # For now, just return the predictions
-            pass
-        return predictions
-
-
-class LogisticRegressionWrapper(ClassifierWrapper):
-    """Wrapper for scikit-learn's LogisticRegression."""
-    
-    def __init__(self, **kwargs):
-        """Initialize LogisticRegression with appropriate parameters."""
-        # Set up LogisticRegression parameters
-        lr_params = {
-            'multi_class': 'ovr',      # Faster than multinomial
-            'solver': 'saga',          # Faster for large datasets
-            'max_iter': 200,           # Reduced iterations
-            'C': 1.0,
-            'tol': 1e-3,              # Relaxed tolerance
-            'n_jobs': -1,
-            'warm_start': True         # Reuse previous solution
-        }
-        lr_params.update(kwargs)
+        self.name = name
         
-        # Initialize base wrapper with preprocessing
-        super().__init__(LogisticRegression, 'LogisticRegression', **lr_params)
-        
-        # Add feature scaling
-        self.scaler = StandardScaler()
-        self._is_fitted = False
-        
-    def fit(self, X, y):
-        """Fit the model with feature scaling."""
-        if not self._is_fitted:
-            X_scaled = self.scaler.fit_transform(X)
-            self._is_fitted = True
+    def fit(self, X, y, sample_weight=None):
+        """Fit the model."""
+        logging.info(f"Fitting {self.name} model with data shape: {X.shape}")
+        start_time = time.time()
+        if sample_weight is not None and hasattr(self.model, 'fit') and 'sample_weight' in self.model.fit.__code__.co_varnames:
+            result = self.model.fit(X, y, sample_weight=sample_weight)
         else:
-            X_scaled = self.scaler.transform(X)
-        return super().fit(X_scaled, y)
+            result = self.model.fit(X, y)
+        logging.info(f"{self.name} fit completed in {time.time() - start_time:.2f}s")
+        return result
+    
+    def predict(self, X):
+        """Make predictions."""
+        return self.model.predict(X)
+
+
+class LogisticRegressionWrapper(BaseModel):
+    """GPU-accelerated LogisticRegression using PyTorch."""
+    
+    def __init__(self, learning_rate=0.01, max_iter=200, batch_size=128, weight_decay=0.0001,
+                 validation_fraction=0.1, early_stopping=True, n_iter_no_change=2,
+                 tol=0.01, verbose=True):
+        super().__init__()
+        self.learning_rate = learning_rate
+        self.max_iter = max_iter
+        self.batch_size = batch_size
+        self.weight_decay = weight_decay
+        self.validation_fraction = validation_fraction
+        self.early_stopping = early_stopping
+        self.n_iter_no_change = n_iter_no_change
+        self.tol = tol
+        self.verbose = verbose
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"Using device: {self.device}")
+
+    def _init_model(self, input_dim, n_classes):
+        """Initialize the PyTorch model."""
+        self.input_dim = input_dim
+        self.n_classes = n_classes
+        self.model = nn.Linear(input_dim, n_classes).to(self.device)
+        self.criterion = nn.CrossEntropyLoss()
+        self.optimizer = optim.Adam(self.model.parameters(), 
+                                  lr=self.learning_rate, 
+                                  weight_decay=self.weight_decay)
+
+    def fit(self, X, y, sample_weight=None):
+        """Fit the model using PyTorch."""
+        start_time = time.time()
+        self.logger.info(f"Memory usage at start_fit: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+        self.logger.info(f"Input data shape: {X.shape}, labels shape: {y.shape}")
+        
+        try:
+            # Convert data to PyTorch tensors
+            X = torch.FloatTensor(X)
+            y = torch.LongTensor(y)
+            if sample_weight is not None:
+                sample_weight = torch.FloatTensor(sample_weight)
+
+            # Initialize model
+            n_classes = len(torch.unique(y))
+            self.logger.info(f"Number of unique classes: {n_classes}")
+            self._init_model(X.shape[1], n_classes)
+
+            # Scale features
+            start_scaling = time.time()
+            self.scaler = StandardScaler()
+            X = torch.FloatTensor(self.scaler.fit_transform(X))
+            self.logger.info("Fitted scaler and transformed data")
+            self.logger.info(f"Scaling time: {time.time() - start_scaling:.2f}s")
+
+            # Create data loaders
+            dataset = TensorDataset(X, y)
+            train_size = int((1 - self.validation_fraction) * len(dataset))
+            val_size = len(dataset) - train_size
+            train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+            
+            train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+            val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
+
+            # Training loop
+            best_val_loss = float('inf')
+            no_improvement_count = 0
+            
+            for epoch in range(self.max_iter):
+                self.model.train()
+                total_loss = 0
+                
+                for batch_X, batch_y in train_loader:
+                    batch_X = batch_X.to(self.device)
+                    batch_y = batch_y.to(self.device)
+                    
+                    self.optimizer.zero_grad()
+                    outputs = self.model(batch_X)
+                    loss = self.criterion(outputs, batch_y)
+                    loss.backward()
+                    self.optimizer.step()
+                    
+                    total_loss += loss.item()
+                
+                # Validation
+                self.model.eval()
+                val_loss = 0
+                with torch.no_grad():
+                    for batch_X, batch_y in val_loader:
+                        batch_X = batch_X.to(self.device)
+                        batch_y = batch_y.to(self.device)
+                        outputs = self.model(batch_X)
+                        val_loss += self.criterion(outputs, batch_y).item()
+                
+                avg_train_loss = total_loss / len(train_loader)
+                avg_val_loss = val_loss / len(val_loader)
+                
+                if self.verbose:
+                    self.logger.info(f"Epoch {epoch + 1}/{self.max_iter}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+                
+                # Early stopping
+                if self.early_stopping:
+                    if avg_val_loss < best_val_loss - self.tol:
+                        best_val_loss = avg_val_loss
+                        no_improvement_count = 0
+                    else:
+                        no_improvement_count += 1
+                        
+                    if no_improvement_count >= self.n_iter_no_change:
+                        if self.verbose:
+                            self.logger.info(f"Early stopping triggered at epoch {epoch + 1}")
+                        break
+            
+            self.logger.info(f"Training completed in {time.time() - start_time:.2f}s")
+            self.logger.info(f"Final memory usage: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            return self
+            
+        except Exception as e:
+            self.logger.error(f"Error during model fitting: {str(e)}")
+            raise
+
+    def predict(self, X):
+        """Predict using the model."""
+        try:
+            X = torch.FloatTensor(self.scaler.transform(X)).to(self.device)
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(X)
+                predictions = torch.argmax(outputs, dim=1)
+            return predictions.cpu().numpy()
+        except Exception as e:
+            self.logger.error(f"Error during prediction: {str(e)}")
+            raise
+
+    def predict_proba(self, X):
+        """Predict class probabilities."""
+        try:
+            X = torch.FloatTensor(self.scaler.transform(X)).to(self.device)
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(X)
+                probabilities = torch.softmax(outputs, dim=1)
+            return probabilities.cpu().numpy()
+        except Exception as e:
+            self.logger.error(f"Error during probability prediction: {str(e)}")
+            raise
+
+
+class SVMWrapper(BaseModel):
+    def __init__(self, learning_rate=0.01, max_iter=25, batch_size=128, weight_decay=0.0001,
+                 margin=1.0, validation_fraction=0.1, early_stopping=True, n_iter_no_change=2,
+                 tol=0.01, verbose=True):
+        super().__init__()
+        self.learning_rate = learning_rate
+        self.max_iter = max_iter
+        self.batch_size = batch_size
+        self.weight_decay = weight_decay
+        self.margin = margin
+        self.validation_fraction = validation_fraction
+        self.early_stopping = early_stopping
+        self.n_iter_no_change = n_iter_no_change
+        self.tol = tol
+        self.verbose = verbose
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"Using device: {self.device}")
+
+    def _init_model(self, input_dim, n_classes):
+        """Initialize the PyTorch model."""
+        self.input_dim = input_dim
+        self.n_classes = n_classes
+        self.model = nn.Linear(input_dim, n_classes).to(self.device)
+        self.optimizer = optim.Adam(self.model.parameters(), 
+                                  lr=self.learning_rate, 
+                                  weight_decay=self.weight_decay)
+
+    def _hinge_loss(self, outputs, targets):
+        """Compute multi-class hinge loss."""
+        batch_size = outputs.size(0)
+        correct_scores = outputs[torch.arange(batch_size), targets].view(-1, 1)
+        margin_diff = outputs - correct_scores + self.margin
+        margin_diff[torch.arange(batch_size), targets] = 0
+        loss = torch.sum(torch.clamp(margin_diff, min=0)) / batch_size
+        return loss
+
+    def fit(self, X, y, sample_weight=None):
+        """Fit the SVM model using PyTorch."""
+        try:
+            start_time = time.time()
+            self.logger.info(f"Memory usage at start_fit: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            self.logger.info(f"Input data shape: {X.shape}, labels shape: {y.shape}")
+            
+            # Convert data to PyTorch tensors
+            X = torch.FloatTensor(X)
+            y = torch.LongTensor(y)
+            if sample_weight is not None:
+                sample_weight = torch.FloatTensor(sample_weight)
+
+            # Initialize model
+            n_classes = len(torch.unique(y))
+            self.logger.info(f"Number of unique classes: {n_classes}")
+            self._init_model(X.shape[1], n_classes)
+
+            # Scale features
+            start_scaling = time.time()
+            self.scaler = StandardScaler()
+            X = torch.FloatTensor(self.scaler.fit_transform(X))
+            self.logger.info("Fitted scaler and transformed data")
+            self.logger.info(f"Scaling time: {time.time() - start_scaling:.2f}s")
+
+            # Create data loaders
+            dataset = TensorDataset(X, y)
+            train_size = int((1 - self.validation_fraction) * len(dataset))
+            val_size = len(dataset) - train_size
+            train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+            
+            train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+            val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
+
+            # Training loop
+            best_val_loss = float('inf')
+            no_improvement_count = 0
+            
+            for epoch in range(self.max_iter):
+                self.model.train()
+                total_loss = 0
+                n_batches = 0
+                
+                for batch_X, batch_y in train_loader:
+                    batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
+                    
+                    self.optimizer.zero_grad()
+                    outputs = self.model(batch_X)
+                    loss = self._hinge_loss(outputs, batch_y)
+                    
+                    if sample_weight is not None:
+                        batch_weights = sample_weight[train_dataset.indices][n_batches*self.batch_size:(n_batches+1)*self.batch_size]
+                        loss = loss * batch_weights.mean()
+                    
+                    loss.backward()
+                    self.optimizer.step()
+                    
+                    total_loss += loss.item()
+                    n_batches += 1
+                
+                avg_train_loss = total_loss / n_batches
+                
+                # Validation
+                self.model.eval()
+                val_loss = 0
+                n_val_batches = 0
+                
+                with torch.no_grad():
+                    for batch_X, batch_y in val_loader:
+                        batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
+                        outputs = self.model(batch_X)
+                        loss = self._hinge_loss(outputs, batch_y)
+                        val_loss += loss.item()
+                        n_val_batches += 1
+                
+                avg_val_loss = val_loss / n_val_batches
+                
+                if self.verbose:
+                    self.logger.info(f"Epoch {epoch+1}/{self.max_iter}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+                
+                # Early stopping
+                if self.early_stopping:
+                    if avg_val_loss < best_val_loss - self.tol:
+                        best_val_loss = avg_val_loss
+                        no_improvement_count = 0
+                    else:
+                        no_improvement_count += 1
+                    
+                    if no_improvement_count >= self.n_iter_no_change:
+                        self.logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                        break
+            
+            training_time = time.time() - start_time
+            self.logger.info(f"Training completed in {training_time:.2f}s")
+            self.logger.info(f"Final memory usage: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            
+            return self
+            
+        except Exception as e:
+            self.logger.error(f"Error during model training: {str(e)}")
+            raise
+
+    def predict(self, X):
+        """Predict using the SVM model."""
+        try:
+            X = torch.FloatTensor(self.scaler.transform(X)).to(self.device)
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(X)
+                predictions = torch.argmax(outputs, dim=1)
+            return predictions.cpu().numpy()
+        except Exception as e:
+            self.logger.error(f"Error during prediction: {str(e)}")
+            raise
+
+    def predict_proba(self, X):
+        """Predict class probabilities using the SVM model."""
+        try:
+            X = torch.FloatTensor(self.scaler.transform(X)).to(self.device)
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(X)
+                probabilities = torch.softmax(outputs, dim=1)
+            return probabilities.cpu().numpy()
+        except Exception as e:
+            self.logger.error(f"Error during probability prediction: {str(e)}")
+            raise
+
+
+class DecisionTreeModule(nn.Module):
+    """GPU-accelerated Decision Tree using PyTorch."""
+    def __init__(self, input_dim, n_classes, max_depth=10):
+        super().__init__()
+        self.input_dim = input_dim
+        self.n_classes = n_classes
+        self.max_depth = max_depth
+        
+        # Initialize tree parameters with smaller depth for efficiency
+        n_nodes = 2**max_depth - 1
+        # Use float tensors for parameters that require gradients
+        self.split_features = nn.Parameter(torch.rand(n_nodes) * input_dim)
+        self.split_thresholds = nn.Parameter(torch.randn(n_nodes) / np.sqrt(input_dim))  # Better initialization
+        self.leaf_probabilities = nn.Parameter(torch.zeros(2**max_depth, n_classes))
+        nn.init.xavier_uniform_(self.leaf_probabilities, gain=1/np.sqrt(n_classes))  # Better initialization
+
+    def forward(self, x):
+        batch_size = x.size(0)
+        node_indices = torch.zeros(batch_size, dtype=torch.long, device=x.device)
+        
+        # Pre-compute feature indices for all nodes
+        node_features = torch.floor(self.split_features).long()
+        node_features = torch.clamp(node_features, 0, self.input_dim - 1)
+        
+        for depth in range(self.max_depth):
+            # Get current node features and thresholds for the entire batch
+            current_features = node_features[node_indices]
+            current_thresholds = self.split_thresholds[node_indices]
+            
+            # Compute split decisions
+            decisions = x[torch.arange(batch_size), current_features] > current_thresholds
+            
+            # Update node indices
+            node_indices = node_indices * 2 + 1 + decisions.long()
+        
+        # Get leaf probabilities
+        leaf_indices = node_indices - (2**self.max_depth - 1)
+        probabilities = self.leaf_probabilities[leaf_indices]
+        return torch.softmax(probabilities, dim=1)
+
+
+class RandomForestWrapper(BaseModel):
+    """GPU-accelerated Random Forest using PyTorch."""
+    
+    def __init__(self, n_estimators=50, max_depth=8, learning_rate=0.01, 
+                 batch_size=256, n_epochs=15, weight_decay=0.0001,
+                 validation_fraction=0.1, early_stopping=True,
+                 n_iter_no_change=2, tol=0.01, verbose=True):
+        super().__init__()
+        self.n_estimators = n_estimators  # Reduced number of trees
+        self.max_depth = max_depth  # Reduced depth
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size  # Increased batch size
+        self.n_epochs = n_epochs  # Reduced epochs
+        self.weight_decay = weight_decay
+        self.validation_fraction = validation_fraction
+        self.early_stopping = early_stopping
+        self.n_iter_no_change = n_iter_no_change
+        self.tol = tol
+        self.verbose = verbose
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"Using device: {self.device}")
+
+    def _init_forest(self, input_dim, n_classes):
+        """Initialize the forest of decision trees."""
+        # Initialize all trees at once
+        self.trees = nn.ModuleList([
+            DecisionTreeModule(input_dim, n_classes, self.max_depth)
+            for _ in range(self.n_estimators)
+        ]).to(self.device)
+        
+        # Use AdamW optimizer for better regularization
+        self.optimizer = optim.AdamW(
+            self.trees.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay
+        )
+
+    def fit(self, X, y, sample_weight=None):
+        """Train the random forest using PyTorch."""
+        try:
+            start_time = time.time()
+            self.logger.info(f"Memory usage at start_fit: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            self.logger.info(f"Input data shape: {X.shape}, labels shape: {y.shape}")
+            
+            # Scale features
+            start_scaling = time.time()
+            self.scaler = StandardScaler()
+            X = self.scaler.fit_transform(X)
+            self.logger.info("Fitted scaler and transformed data")
+            self.logger.info(f"Scaling time: {time.time() - start_scaling:.2f}s")
+
+            # Convert to tensors and move to GPU
+            X = torch.FloatTensor(X).to(self.device)
+            y = torch.LongTensor(y).to(self.device)
+            if sample_weight is not None:
+                sample_weight = torch.FloatTensor(sample_weight).to(self.device)
+
+            # Initialize forest
+            n_classes = len(torch.unique(y))
+            self.logger.info(f"Number of unique classes: {n_classes}")
+            self._init_forest(X.shape[1], n_classes)
+
+            # Create data loaders
+            dataset = TensorDataset(X, y)
+            train_size = int((1 - self.validation_fraction) * len(dataset))
+            val_size = len(dataset) - train_size
+            train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+            
+            train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, pin_memory=False)
+            val_loader = DataLoader(val_dataset, batch_size=self.batch_size, pin_memory=False)
+
+            # Training loop
+            criterion = nn.CrossEntropyLoss()
+            best_val_loss = float('inf')
+            no_improvement_count = 0
+            
+            for epoch in range(self.n_epochs):
+                # Training
+                for tree in self.trees:
+                    tree.train()
+                total_loss = 0
+                n_batches = 0
+                
+                for batch_X, batch_y in train_loader:
+                    self.optimizer.zero_grad()
+                    
+                    # Forward pass through all trees in parallel
+                    outputs = torch.stack([tree(batch_X) for tree in self.trees])
+                    ensemble_output = outputs.mean(dim=0)
+                    
+                    # Compute loss
+                    loss = criterion(ensemble_output, batch_y)
+                    if sample_weight is not None:
+                        batch_weights = sample_weight[train_dataset.indices][n_batches*self.batch_size:(n_batches+1)*self.batch_size]
+                        loss = loss * batch_weights.mean()
+                    
+                    # Backward pass and optimization
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.trees.parameters(), max_norm=1.0)  # Gradient clipping
+                    self.optimizer.step()
+                    
+                    total_loss += loss.item()
+                    n_batches += 1
+                
+                avg_train_loss = total_loss / n_batches
+                
+                # Validation
+                for tree in self.trees:
+                    tree.eval()
+                val_loss = 0
+                n_val_batches = 0
+                
+                with torch.no_grad():
+                    for batch_X, batch_y in val_loader:
+                        outputs = torch.stack([tree(batch_X) for tree in self.trees])
+                        ensemble_output = outputs.mean(dim=0)
+                        loss = criterion(ensemble_output, batch_y)
+                        val_loss += loss.item()
+                        n_val_batches += 1
+                
+                avg_val_loss = val_loss / n_val_batches
+                
+                if self.verbose:
+                    self.logger.info(f"Epoch {epoch+1}/{self.n_epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+                
+                # Early stopping
+                if self.early_stopping:
+                    if avg_val_loss < best_val_loss - self.tol:
+                        best_val_loss = avg_val_loss
+                        no_improvement_count = 0
+                    else:
+                        no_improvement_count += 1
+                    
+                    if no_improvement_count >= self.n_iter_no_change:
+                        self.logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                        break
+            
+            training_time = time.time() - start_time
+            self.logger.info(f"Training completed in {training_time:.2f}s")
+            self.logger.info(f"Final memory usage: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            
+            return self
+            
+        except Exception as e:
+            self.logger.error(f"Error during training: {str(e)}")
+            raise
         
     def predict(self, X):
-        """Predict with feature scaling."""
-        X_scaled = self.scaler.transform(X)
-        return super().predict(X_scaled)
+        """Predict class labels for samples in X."""
+        try:
+            # Scale and convert to tensor
+            X = torch.FloatTensor(self.scaler.transform(X)).to(self.device)
+            
+            # Get predictions from all trees in parallel
+            with torch.no_grad():
+                outputs = torch.stack([tree(X) for tree in self.trees])
+                ensemble_output = outputs.mean(dim=0)
+                predictions = torch.argmax(ensemble_output, dim=1)
+            
+            return predictions.cpu().numpy()
+            
+        except Exception as e:
+            self.logger.error(f"Error during prediction: {str(e)}")
+            raise
 
-
-class SVMWrapper(ClassifierWrapper):
-    """Wrapper for SVM with logging."""
-    
-    def __init__(self, **kwargs):
-        """Initialize the wrapper."""
-        from sklearn.svm import SVC
-        super().__init__(SVC, 'SVM', **kwargs)
-
-
-class RandomForestWrapper(ClassifierWrapper):
-    """Wrapper for RandomForest with logging."""
-    
-    def __init__(self, **kwargs):
-        """Initialize the wrapper."""
-        from sklearn.ensemble import RandomForestClassifier
-        super().__init__(RandomForestClassifier, 'RandomForest', **kwargs)
-
-
-class KNeighborsWrapper(ClassifierWrapper):
-    """Wrapper for KNeighbors with logging."""
-    
-    def __init__(self, **kwargs):
-        """Initialize the wrapper."""
-        from sklearn.neighbors import KNeighborsClassifier
-        super().__init__(KNeighborsClassifier, 'KNeighbors', **kwargs)
+    def predict_proba(self, X):
+        """Predict class probabilities."""
+        try:
+            # Scale and convert to tensor
+            X = torch.FloatTensor(self.scaler.transform(X)).to(self.device)
+            
+            # Get probabilities from all trees in parallel
+            with torch.no_grad():
+                outputs = torch.stack([tree(X) for tree in self.trees])
+                ensemble_output = outputs.mean(dim=0)
+            
+            return ensemble_output.cpu().numpy()
+            
+        except Exception as e:
+            self.logger.error(f"Error during probability prediction: {str(e)}")
+            raise
 
 
 class DecisionTreeWrapper(ClassifierWrapper):
@@ -262,44 +755,141 @@ class DecisionTreeWrapper(ClassifierWrapper):
         super().__init__(DecisionTreeClassifier, 'DecisionTree', **kwargs)
 
 
+class KNeighborsWrapper(BaseModel):
+    """GPU-accelerated KNN using PyTorch."""
+    
+    def __init__(self, n_neighbors=5, batch_size=128, verbose=True):
+        super().__init__()
+        self.n_neighbors = n_neighbors
+        self.batch_size = batch_size
+        self.verbose = verbose
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"Using device: {self.device}")
+
+    def fit(self, X, y, sample_weight=None):
+        """Store training data and scale features."""
+        try:
+            start_time = time.time()
+            self.logger.info(f"Memory usage at start_fit: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            self.logger.info(f"Input data shape: {X.shape}, labels shape: {y.shape}")
+            
+            # Scale features
+            start_scaling = time.time()
+            self.scaler = StandardScaler()
+            X = self.scaler.fit_transform(X)
+            self.logger.info("Fitted scaler and transformed data")
+            self.logger.info(f"Scaling time: {time.time() - start_scaling:.2f}s")
+
+            # Store training data as tensors
+            self.X_train = torch.FloatTensor(X).to(self.device)
+            self.y_train = torch.LongTensor(y).to(self.device)
+            self.n_classes = len(torch.unique(self.y_train))
+            
+            training_time = time.time() - start_time
+            self.logger.info(f"Training completed in {training_time:.2f}s")
+            self.logger.info(f"Final memory usage: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
+            
+            return self
+            
+        except Exception as e:
+            self.logger.error(f"Error during training: {str(e)}")
+            raise
+
+    def _compute_distances(self, X_batch):
+        """Compute pairwise distances between batch and training data."""
+        # Compute squared L2 norm of each vector
+        X_norm = (X_batch ** 2).sum(1).view(-1, 1)
+        train_norm = (self.X_train ** 2).sum(1).view(1, -1)
+        
+        # Compute distances using matrix multiplication
+        # dist^2 = ||x||^2 + ||y||^2 - 2<x,y>
+        distances = X_norm + train_norm - 2.0 * torch.mm(X_batch, self.X_train.t())
+        return torch.sqrt(torch.clamp(distances, min=0.0))
+
+    def _get_probabilities(self, distances, k):
+        """Convert distances to probabilities using k-nearest neighbors."""
+        # Get indices of k nearest neighbors
+        _, indices = torch.topk(distances, k=k, dim=1, largest=False)
+        
+        # Get labels of k nearest neighbors
+        neighbor_labels = self.y_train[indices]
+        
+        # Convert to one-hot encoding
+        one_hot = torch.zeros(indices.shape[0], indices.shape[1], self.n_classes, device=self.device)
+        one_hot.scatter_(2, neighbor_labels.unsqueeze(2), 1)
+        
+        # Average over neighbors to get probabilities
+        return one_hot.mean(dim=1)
+
+    def predict(self, X):
+        """Predict class labels for samples in X."""
+        try:
+            # Scale and convert to tensor
+            X = torch.FloatTensor(self.scaler.transform(X))
+            
+            # Process in batches
+            predictions = []
+            n_samples = X.shape[0]
+            
+            for i in range(0, n_samples, self.batch_size):
+                batch = X[i:i+self.batch_size].to(self.device)
+                distances = self._compute_distances(batch)
+                probs = self._get_probabilities(distances, self.n_neighbors)
+                predictions.append(torch.argmax(probs, dim=1))
+            
+            # Concatenate results
+            predictions = torch.cat(predictions)
+            return predictions.cpu().numpy()
+            
+        except Exception as e:
+            self.logger.error(f"Error during prediction: {str(e)}")
+            raise
+
+    def predict_proba(self, X):
+        """Predict probability estimates."""
+        try:
+            # Scale and convert to tensor
+            X = torch.FloatTensor(self.scaler.transform(X))
+            
+            # Process in batches
+            probabilities = []
+            n_samples = X.shape[0]
+            
+            for i in range(0, n_samples, self.batch_size):
+                batch = X[i:i+self.batch_size].to(self.device)
+                distances = self._compute_distances(batch)
+                probs = self._get_probabilities(distances, self.n_neighbors)
+                probabilities.append(probs)
+            
+            # Concatenate results
+            probabilities = torch.cat(probabilities)
+            return probabilities.cpu().numpy()
+            
+        except Exception as e:
+            self.logger.error(f"Error during probability prediction: {str(e)}")
+            raise
+
+
 class ModelFactory:
-    """Factory class for creating models."""
+    """Factory class for creating model instances."""
     
     @staticmethod
-    def create_model(model_name: str) -> BaseEstimator:
-        """Create a model instance based on the model name."""
-        if model_name == 'LogisticRegression':
-            return LogisticRegression(
-                multi_class='ovr',      # One-vs-rest is faster than multinomial
-                max_iter=100,           # Reduce max iterations
-                solver='saga',          # Fast solver for large datasets
-                tol=1e-2,              # Looser tolerance for faster convergence
-                n_jobs=-1,             # Use all CPU cores
-                C=0.1,                 # Stronger regularization
-                warm_start=True,       # Reuse previous solution
-                dual=False,            # Primal formulation is faster for n_samples > n_features
-                penalty='l2'           # L2 regularization is faster than L1
-            )
-        elif model_name == 'RandomForest':
-            return RandomForestClassifier(
-                n_estimators=100,
-                n_jobs=-1,
-                max_depth=10   # Limit depth for faster training
-            )
-        elif model_name == 'SVM':
-            return SVC(
-                kernel='rbf',
-                probability=True,
-                max_iter=200,  # Add iteration limit
-                tol=1e-3       # Looser tolerance
-            )
-        elif model_name == 'KNeighbors':
-            return KNeighborsClassifier(
-                n_neighbors=5,
-                n_jobs=-1      # Use all CPU cores
-            )
+    def create_model(classifier_name: str) -> ClassifierWrapper:
+        """Create a model instance based on the classifier name."""
+        logging.info(f"Creating model for classifier: {classifier_name}")
+        if classifier_name == 'SVM':
+            model = SVMWrapper()
+            logging.info(f"Created SVMWrapper instance: {model.__class__.__name__}")
+            return model
+        elif classifier_name == 'LogisticRegression':
+            return LogisticRegressionWrapper()
+        elif classifier_name == 'RandomForest':
+            return RandomForestWrapper()
+        elif classifier_name == 'KNeighbors':
+            return KNeighborsWrapper()
         else:
-            raise ValueError(f"Unsupported model: {model_name}")
+            raise ValueError(f"Unknown classifier: {classifier_name}")
 
     @staticmethod
     def get_classifier(model_name: str, **kwargs):
