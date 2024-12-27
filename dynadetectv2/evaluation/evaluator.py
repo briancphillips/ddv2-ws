@@ -214,16 +214,27 @@ class ModelEvaluator:
         os.makedirs(results_dir, exist_ok=True)
         os.makedirs(archive_dir, exist_ok=True)
         
-        # Archive existing results if they exist
         results_file = os.path.join(results_dir, f'experiment_results_{timestamp}.csv')
+        archive_file = os.path.join(archive_dir, f'experiment_results_{timestamp}.csv')
+        
+        # Load existing results if they exist
+        existing_results = []
         if os.path.exists(results_file):
-            archive_file = os.path.join(archive_dir, f'experiment_results_{timestamp}.csv')
-            os.rename(results_file, archive_file)
-            logging.info(f"Archived existing results to {archive_file}")
+            try:
+                with open(results_file, 'r', newline='') as f:
+                    reader = csv.DictReader(f)
+                    existing_results = list(reader)
+                logging.info(f"Loaded {len(existing_results)} existing results")
+            except Exception as e:
+                logging.warning(f"Could not load existing results: {e}")
+        
+        # Combine existing and new results
+        all_results = existing_results + self.results
+        logging.info(f"Total results to save: {len(all_results)}")
         
         # Get all unique keys from all results
         fieldnames = set()
-        for result in self.results:
+        for result in all_results:
             fieldnames.update(result.keys())
         
         # Sort fieldnames to ensure consistent column order
@@ -237,12 +248,17 @@ class ModelEvaluator:
             x
         ))
         
-        with open(results_file, 'a', newline='') as f:
+        # Archive existing file if it exists
+        if os.path.exists(results_file):
+            os.replace(results_file, archive_file)
+            logging.info(f"Archived existing results to {archive_file}")
+        
+        # Write all results to new file
+        with open(results_file, 'w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=sorted_fieldnames)
-            if f.tell() == 0:  # File is empty
-                writer.writeheader()
-            writer.writerows(self.results)
-        logging.info(f"Saved results to {results_file}")
+            writer.writeheader()
+            writer.writerows(all_results)
+        logging.info(f"Saved {len(all_results)} results to {results_file}")
 
 
 class DatasetEvaluator(ModelEvaluator):
