@@ -11,7 +11,7 @@ from sklearn.metrics import (
 )
 
 
-def compute_metrics(true_labels: np.ndarray, predicted_labels: np.ndarray) -> Dict[str, Any]:
+def calculate_metrics(true_labels: np.ndarray, predicted_labels: np.ndarray) -> Dict[str, Any]:
     """Compute evaluation metrics.
     
     Args:

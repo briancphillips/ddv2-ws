@@ -9,7 +9,7 @@ from dataclasses import asdict
 from .core.dataset import DatasetHandler
 from .evaluation.evaluator import DatasetEvaluator
 from .core.models import ModelFactory
-from experiments.config import ExperimentConfig, DatasetConfig
+from .config import ExperimentConfig, DatasetConfig
 
 
 def main(experiment_config: ExperimentConfig, timestamp: Optional[str] = None) -> None:
@@ -27,16 +27,12 @@ def main(experiment_config: ExperimentConfig, timestamp: Optional[str] = None) -
         logging.info(f"Processing dataset: {dataset_config.name}")
         
         # Initialize components
-        dataset_handler = DatasetHandler(
-            dataset_name=dataset_config.name,
-            dataset_type=dataset_config.dataset_type,
-            sample_size=dataset_config.sample_size
-        )
+        dataset_handler = DatasetHandler(dataset_config)
         
         # Run evaluation for each classifier
         for classifier_name in experiment_config.classifiers:
             logging.info(f"Running evaluation with classifier: {classifier_name}")
-            evaluator = DatasetEvaluator(asdict(dataset_config), classifier_name)
+            evaluator = DatasetEvaluator(dataset_config, classifier_name)
             evaluator.run_evaluation(timestamp=timestamp)
             
         logging.info(f"Evaluation completed for {dataset_config.name}")

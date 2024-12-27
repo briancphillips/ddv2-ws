@@ -12,6 +12,10 @@ import pandas as pd
 import os
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
+import shutil
+import requests
+import zipfile
+from PIL import Image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -48,52 +52,129 @@ class NumericalDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
+class GTSRBDataset(Dataset):
+    """GTSRB dataset class."""
+    
+    def __init__(self, root_dir, train=True, transform=None, val_split=0.2):
+        """Initialize GTSRB dataset.
+        
+        Args:
+            root_dir: Root directory containing the dataset
+            train: Whether to use training or validation split
+            transform: Optional transform to be applied to images
+            val_split: Fraction of training data to use for validation
+        """
+        self.root_dir = root_dir
+        self.train = train
+        self.transform = transform
+        self.data_folder = os.path.join(root_dir, 'GTSRB/Final_Training/Images')
+        self.samples = []
+        self.targets = []
+        
+        # Load data from numbered folders
+        for class_id in range(43):
+            class_folder = os.path.join(self.data_folder, f"{class_id:05d}")
+            if not os.path.exists(class_folder):
+                continue
+                
+            # Read class-specific CSV file
+            csv_file = os.path.join(class_folder, f"GT-{class_id:05d}.csv")
+            if not os.path.exists(csv_file):
+                continue
+                
+            try:
+                df = pd.read_csv(csv_file, sep=';')
+                for _, row in df.iterrows():
+                    img_path = os.path.join(class_folder, str(row['Filename']))
+                    if os.path.exists(img_path):
+                        # Store ROI information along with the image path
+                        roi = (
+                            int(row['Roi.X1']), int(row['Roi.Y1']),
+                            int(row['Roi.X2']), int(row['Roi.Y2'])
+                        )
+                        self.samples.append((img_path, class_id, roi))
+                        self.targets.append(class_id)
+            except Exception as e:
+                logging.error(f"Error reading CSV file {csv_file}: {str(e)}")
+                continue
+        
+        # Split into train and validation sets
+        if len(self.samples) == 0:
+            raise RuntimeError(f"No valid samples found in {self.data_folder}")
+            
+        # Use stratified split to maintain class distribution
+        train_indices, val_indices = train_test_split(
+            range(len(self.samples)),
+            test_size=val_split,
+            stratify=self.targets,
+            random_state=42
+        )
+        
+        # Select appropriate indices based on train flag
+        indices = train_indices if train else val_indices
+        self.samples = [self.samples[i] for i in indices]
+        self.targets = np.array([self.targets[i] for i in indices])
+    
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, idx):
+        img_path, target, roi = self.samples[idx]
+        img = Image.open(img_path)
+        
+        # Crop to ROI if available
+        if roi is not None:
+            x1, y1, x2, y2 = roi
+            img = img.crop((x1, y1, x2, y2))
+        
+        if self.transform:
+            img = self.transform(img)
+            
+        return img, target
+
+
 class DatasetHandler:
     """Handler for dataset operations."""
     
-    def __init__(self, dataset_name):
+    def __init__(self, dataset_config):
         """Initialize dataset handler."""
-        self.dataset_name = dataset_name
+        self.config = dataset_config
+        self.dataset_name = dataset_config.name
+        self.sample_size = dataset_config.sample_size
         self.root_dir = '/home/brian/Notebooks/ddv2-ws'
         self.transform = self.get_transform()
         self.pca = None  # Store PCA object for consistent dimensionality
-        logging.info(f"Initialized DatasetHandler for {dataset_name}")
+        self._feature_cache = {}  # Cache for extracted features
+        self._label_flip_cache = {}  # Cache for flipped labels
+        logging.info(f"Initialized DatasetHandler for {self.dataset_name}")
         logging.info(f"Dataset type: {self.get_dataset_type()}")
+        logging.info(f"Sample size: {self.sample_size}")
         
-        # Set up GTSRB test set structure if needed
-        if dataset_name == "GTSRB":
-            self.setup_gtsrb_test()
+        # Set up GTSRB dataset if needed
+        if self.dataset_name == "GTSRB":
+            self.setup_gtsrb()
 
-    def setup_gtsrb_test(self):
-        """Create class subdirectories for GTSRB test set if they don't exist."""
-        test_dir = os.path.join(self.root_dir, '.datasets/gtsrb/GTSRB/Final_Test/Images')
-        if not os.path.exists(test_dir):
-            return
+    def setup_gtsrb(self):
+        """Download and set up GTSRB dataset if it doesn't exist."""
+        # Create dataset directory
+        dataset_dir = os.path.join(self.root_dir, '.datasets/gtsrb')
+        os.makedirs(dataset_dir, exist_ok=True)
         
-        # Check if subdirectories already exist
-        subdirs = [d for d in os.listdir(test_dir) if os.path.isdir(os.path.join(test_dir, d))]
-        if subdirs:
-            return
+        # Download training data
+        train_url = 'https://benchmark.ini.rub.de/Dataset/GTSRB_Final_Training_Images.zip'
+        train_zip = os.path.join(dataset_dir, 'GTSRB_Final_Training_Images.zip')
+        if not os.path.exists(train_zip):
+            logging.info("Downloading GTSRB training data...")
+            response = requests.get(train_url, stream=True)
+            with open(train_zip, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
         
-        # Create subdirectories for each class (0-42)
-        for i in range(43):
-            class_dir = os.path.join(test_dir, f"{i:05d}")
-            os.makedirs(class_dir, exist_ok=True)
-        
-        # Move images to appropriate subdirectories based on filename
-        for filename in os.listdir(test_dir):
-            if not filename.endswith('.ppm'):
-                continue
-            
-            # Extract class from filename (first 5 digits)
-            class_id = filename[:5]
-            src = os.path.join(test_dir, filename)
-            dst = os.path.join(test_dir, class_id, filename)
-        
-            try:
-                os.rename(src, dst)
-            except OSError:
-                continue
+        # Extract training data
+        if not os.path.exists(os.path.join(dataset_dir, 'GTSRB/Final_Training')):
+            logging.info("Extracting GTSRB training data...")
+            with zipfile.ZipFile(train_zip, 'r') as zip_ref:
+                zip_ref.extractall(dataset_dir)
 
     def get_dataset_type(self):
         """Get dataset type."""
@@ -149,71 +230,77 @@ class DatasetHandler:
         
         return np.array(indices, dtype=np.int64)
 
-    def get_train_dataset(self, sample_size=None):
+    def get_train_dataset(self):
         """Get training dataset."""
-        if self.get_dataset_type() == 'numerical':
-            dataset = self.load_numerical_dataset('train', sample_size)
-            
-        if self.dataset_name == 'CIFAR100':
-            dataset = datasets.CIFAR100(root=os.path.join(self.root_dir, '.datasets/cifar-100'), train=True, download=True, transform=self.transform)
-            if sample_size is not None and sample_size > 0 and sample_size < len(dataset):
-                indices = self.get_stratified_indices(dataset, sample_size)
-                dataset = Subset(dataset, indices)
-                # Store targets for subset
-                dataset.targets = np.array(dataset.dataset.targets)[dataset.indices]
-        elif self.dataset_name == "ImageNette":
-            dataset = datasets.ImageFolder(root=os.path.join(self.root_dir, '.datasets/imagenette/train'), transform=self.transform)
-            if sample_size is not None and sample_size > 0 and sample_size < len(dataset):
-                indices = self.get_stratified_indices(dataset, sample_size)
-                dataset = Subset(dataset, indices)
-                # Store targets for subset
-                dataset.targets = np.array([dataset.dataset.targets[i] for i in indices])
-        elif self.dataset_name == "GTSRB":
-            # For GTSRB training, each class has its own folder (00000, 00001, etc.)
-            dataset = datasets.ImageFolder(root=os.path.join(self.root_dir, '.datasets/gtsrb/GTSRB/Training'), transform=self.transform)
-            if sample_size is not None and sample_size > 0 and sample_size < len(dataset):
-                indices = self.get_stratified_indices(dataset, sample_size)
-                dataset = Subset(dataset, indices)
-                # Store targets for subset
-                dataset.targets = np.array([dataset.dataset.targets[i] for i in indices])
-        else:
-            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
+        return self._get_dataset('train', self.sample_size)
         
-        return dataset
-    
-    def get_val_dataset(self, sample_size=None):
+    def get_val_dataset(self):
         """Get validation dataset."""
+        if self.dataset_name == 'GTSRB':
+            # For GTSRB, use 20% of train size or minimum 1000 samples
+            val_size = max(self.sample_size // 5, 1000)
+        else:
+            # For other datasets, use 20% of train size
+            val_size = self.sample_size // 5 if self.sample_size else None
+        
+        return self._get_dataset('val', val_size)
+        
+    def _get_dataset(self, split: str, sample_size: Optional[int] = None) -> Dataset:
+        """Internal method to get dataset with sample size."""
         if self.get_dataset_type() == 'numerical':
-            dataset = self.load_numerical_dataset('val', sample_size)
+            return self.load_numerical_dataset(split, sample_size)
             
         if self.dataset_name == 'CIFAR100':
-            dataset = datasets.CIFAR100(root=os.path.join(self.root_dir, '.datasets/cifar-100'), train=False, download=True, transform=self.transform)
-            if sample_size is not None and sample_size > 0 and sample_size < len(dataset):
+            # Create a subset of indices first
+            is_train = (split == 'train')
+            total_samples = 50000 if is_train else 10000
+            
+            dataset = datasets.CIFAR100(
+                root=os.path.join(self.root_dir, '.datasets/cifar-100'),
+                train=is_train,
+                download=True,
+                transform=self.transform
+            )
+            
+            if sample_size is not None and sample_size > 0:
                 indices = self.get_stratified_indices(dataset, sample_size)
                 dataset = Subset(dataset, indices)
                 # Store targets for subset
                 dataset.targets = np.array(dataset.dataset.targets)[dataset.indices]
+                
         elif self.dataset_name == "ImageNette":
-            dataset = datasets.ImageFolder(root=os.path.join(self.root_dir, '.datasets/imagenette/val'), transform=self.transform)
+            split_dir = 'train' if split == 'train' else 'val'
+            dataset = datasets.ImageFolder(
+                root=os.path.join(self.root_dir, f'.datasets/imagenette/{split_dir}'),
+                transform=self.transform
+            )
+            
             if sample_size is not None and sample_size > 0 and sample_size < len(dataset):
                 indices = self.get_stratified_indices(dataset, sample_size)
                 dataset = Subset(dataset, indices)
                 # Store targets for subset
                 dataset.targets = np.array([dataset.dataset.targets[i] for i in indices])
+                
         elif self.dataset_name == "GTSRB":
-            # For GTSRB test, all images are in a flat directory with a CSV mapping
-            test_dir = os.path.join(self.root_dir, '.datasets/gtsrb/GTSRB/Final_Test/Images')
-            dataset = datasets.ImageFolder(root=test_dir, transform=self.transform)
-            if sample_size is not None and sample_size > 0 and sample_size < len(dataset):
+            dataset = GTSRBDataset(
+                root_dir=os.path.join(self.root_dir, '.datasets/gtsrb'),
+                train=(split == 'train'),
+                transform=self.transform
+            )
+            
+            if sample_size is not None and sample_size > 0:
+                if split != 'train':
+                    # For test set, ensure at least 1000 samples
+                    sample_size = max(sample_size, 1000)
                 indices = self.get_stratified_indices(dataset, sample_size)
                 dataset = Subset(dataset, indices)
                 # Store targets for subset
-                dataset.targets = np.array([dataset.dataset.targets[i] for i in indices])
+                dataset.targets = dataset.dataset.targets[dataset.indices]
         else:
             raise ValueError(f"Unsupported dataset: {self.dataset_name}")
-        
+            
         return dataset
-    
+
     def load_numerical_dataset(self, split='train', sample_size=None):
         """Load numerical dataset."""
         if self.dataset_name == 'Diabetes':
@@ -244,38 +331,48 @@ class DatasetHandler:
             
         return dataset
     
-    def extract_features(self, dataset):
-        """Extract features from dataset using PCA."""
-        # Convert dataset to DataLoader
-        data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
+    def extract_features(self, dataset: torch.utils.data.Dataset) -> Tuple[np.ndarray, np.ndarray]:
+        """Extract features from dataset.
+        
+        Args:
+            dataset: Input dataset
+            
+        Returns:
+            Tuple of (features, labels)
+        """
+        # Generate cache key based on dataset object id and length
+        cache_key = (id(dataset), len(dataset))
+        if cache_key in self._feature_cache:
+            logging.info("Using cached features")
+            return self._feature_cache[cache_key]
+            
+        features = []
+        labels = []
+        total_samples = len(dataset)
+        
+        logging.info(f"Extracting features from {total_samples} samples...")
         
         # Extract raw features
-        all_features = []
-        all_labels = []
+        for data, label in dataset:
+            if isinstance(data, torch.Tensor):
+                features.append(data.cpu().numpy().flatten())
+            else:
+                features.append(data.flatten())
+            labels.append(label)
+            
+        features = np.array(features)
+        labels = np.array(labels)
         
-        for images, labels in data_loader:
-            # Flatten the images
-            features = images.view(images.size(0), -1).numpy()
-            all_features.append(features)
-            all_labels.append(labels.numpy())
-        
-        features = np.concatenate(all_features)
-        labels = np.concatenate(all_labels)
-        
-        logging.info(f"Extracting features from {len(features)} samples...")
-        
-        # Initialize PCA if not already done
-        if self.pca is None:
-            n_components = min(100, len(features) - 1)  # Ensure n_components is less than n_samples
-            logging.info(f"Fitting PCA to reduce dimensions from {features.shape[1]} to {n_components}...")
-            self.pca = PCA(n_components=n_components)
-            features = self.pca.fit_transform(features)
-        else:
-            # Use the same PCA transformation for validation set
-            features = self.pca.transform(features)
-        
+        # Apply PCA if needed
+        if self.dataset_name == 'image' and features.shape[1] > 100:
+            logging.info(f"Fitting PCA to reduce dimensions from {features.shape[1]} to 100...")
+            pca = PCA(n_components=100)
+            features = pca.fit_transform(features)
+            
         logging.info(f"Feature extraction completed. Final feature shape: {features.shape}")
         
+        # Cache the results
+        self._feature_cache[cache_key] = (features, labels)
         return features, labels
 
     def get_targets(self, dataset):
@@ -300,6 +397,12 @@ class DatasetHandler:
             
     def label_flipping(self, labels, mode, target_class=None, source_class=None, poison_rate=0.0):
         """Apply label flipping attack to the dataset."""
+        # Generate cache key
+        cache_key = (hash(str(labels.tolist())), mode, target_class, source_class, poison_rate)
+        if cache_key in self._label_flip_cache:
+            logging.info("Using cached flipped labels")
+            return self._label_flip_cache[cache_key]
+            
         labels = np.array(labels)  # Ensure labels is a numpy array
         unique_labels = np.unique(labels)
         original_labels = labels.copy()
@@ -353,7 +456,9 @@ class DatasetHandler:
             'num_poisoned': int(num_poisoned),
             'poisoned_classes': list(poisoned_classes)
         }
-
+        
+        # Cache the results
+        self._label_flip_cache[cache_key] = (new_labels.astype(np.int64), attack_params)
         return new_labels.astype(np.int64), attack_params
 
     def apply_label_flipping(self, dataset, poison_rate, flip_type='random_to_random'):
@@ -399,3 +504,63 @@ class DatasetHandler:
             dataset.targets = new_targets.tolist()  # Convert back to list for CIFAR100
             
         return dataset
+
+    def get_train_data(self):
+        """Get training data and labels."""
+        train_dataset = self.get_train_dataset(sample_size=self.config.sample_size)
+        return self.extract_features(train_dataset)
+
+    def get_test_data(self):
+        """Get test data and labels."""
+        test_dataset = self.get_val_dataset(sample_size=self.config.sample_size)
+        return self.extract_features(test_dataset)
+
+    def apply_label_flipping_to_labels(self, labels: np.ndarray, poison_rate: float, flip_type: str = 'random_to_random') -> np.ndarray:
+        """Apply label flipping directly to labels.
+        
+        Args:
+            labels: Array of labels to modify
+            poison_rate: Proportion of labels to flip
+            flip_type: Type of flipping to apply
+            
+        Returns:
+            Modified labels array
+        """
+        num_samples = len(labels)
+        num_classes = len(np.unique(labels))
+        num_to_poison = int(num_samples * poison_rate)
+        
+        if num_to_poison == 0:
+            return labels
+            
+        # Select indices to poison
+        indices_to_poison = np.random.choice(
+            num_samples, 
+            size=num_to_poison, 
+            replace=False
+        )
+        
+        # Create copy of labels
+        poisoned_labels = labels.copy()
+        
+        if flip_type == 'random_to_random':
+            # For each selected index, randomly change its label
+            for idx in indices_to_poison:
+                current_label = poisoned_labels[idx]
+                # Get all labels except current
+                possible_labels = [l for l in range(num_classes) if l != current_label]
+                # Randomly select new label
+                new_label = np.random.choice(possible_labels)
+                poisoned_labels[idx] = new_label
+                
+        elif flip_type == 'next_class':
+            # Change each selected label to next class (cycling back to 0)
+            poisoned_labels[indices_to_poison] = (
+                poisoned_labels[indices_to_poison] + 1
+            ) % num_classes
+            
+        else:
+            raise ValueError(f"Unknown flip type: {flip_type}")
+            
+        logging.info(f"Number of labels flipped: {num_to_poison}")
+        return poisoned_labels

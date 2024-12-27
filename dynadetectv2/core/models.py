@@ -6,6 +6,11 @@ import torch.nn as nn
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
 import logging
 import time
 
@@ -159,75 +164,66 @@ class SoftKNN(nn.Module):
 
 
 class ClassifierWrapper(BaseEstimator, ClassifierMixin):
-    """Base wrapper for classifiers."""
+    """Base wrapper for scikit-learn classifiers."""
     
     def __init__(self, model_class, model_name, **kwargs):
-        """Initialize the wrapper."""
-        self.model = model_class(**kwargs)
+        """Initialize wrapper."""
         self.model_name = model_name
+        self.use_dynadetect = kwargs.pop('use_dynadetect', False)
+        self.detection_threshold = kwargs.pop('detection_threshold', 0.5)
+        self.model = model_class(**kwargs)
     
     def fit(self, X, y):
-        """Fit the model."""
-        try:
-            self.model.fit(X, y)
-            return self
-        except Exception as e:
-            logging.error(f"Error in {self.model_name} training: {str(e)}")
-            raise
+        """Fit model."""
+        return self.model.fit(X, y)
     
     def predict(self, X):
-        """Predict using the model."""
-        return self.model.predict(X)
+        """Predict using model."""
+        predictions = self.model.predict(X)
+        if self.use_dynadetect:
+            # Apply DynaDetect logic here
+            # For now, just return the predictions
+            pass
+        return predictions
 
 
 class LogisticRegressionWrapper(ClassifierWrapper):
-    """Wrapper for LogisticRegression with logging."""
+    """Wrapper for scikit-learn's LogisticRegression."""
     
     def __init__(self, **kwargs):
-        """Initialize the wrapper."""
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.decomposition import PCA
-        
-        # Set reasonable defaults for high-dimensional data
+        """Initialize LogisticRegression with appropriate parameters."""
+        # Set up LogisticRegression parameters
         lr_params = {
-            'max_iter': 100,
-            'solver': 'saga',
-            'C': 0.1,
-            'class_weight': 'balanced',
-            'tol': 0.01
+            'multi_class': 'ovr',      # Faster than multinomial
+            'solver': 'saga',          # Faster for large datasets
+            'max_iter': 200,           # Reduced iterations
+            'C': 1.0,
+            'tol': 1e-3,              # Relaxed tolerance
+            'n_jobs': -1,
+            'warm_start': True         # Reuse previous solution
         }
         lr_params.update(kwargs)
         
-        # Create pipeline with PCA
-        self.model = Pipeline([
-            ('scaler', StandardScaler()),
-            ('pca', PCA(n_components=100)),  # Reduce to 100 components
-            ('classifier', LogisticRegression(**lr_params))
-        ])
-        self.model_name = 'LogisticRegression'
-    
+        # Initialize base wrapper with preprocessing
+        super().__init__(LogisticRegression, 'LogisticRegression', **lr_params)
+        
+        # Add feature scaling
+        self.scaler = StandardScaler()
+        self._is_fitted = False
+        
     def fit(self, X, y):
-        """Fit the model with logging."""
-        import time
-        start_time = time.time()
-        logging.info(f"Starting LogisticRegression pipeline on {X.shape} data...")
-        try:
-            self.model.fit(X, y)
-            train_time = time.time() - start_time
-            n_iter = self.model.named_steps['classifier'].n_iter_
-            explained_var = self.model.named_steps['pca'].explained_variance_ratio_.sum()
-            logging.info(f"LogisticRegression pipeline completed in {train_time:.2f}s ({n_iter} iterations)")
-            logging.info(f"PCA explained variance ratio: {explained_var:.4f}")
-            return self
-        except Exception as e:
-            logging.error(f"Error in LogisticRegression pipeline: {str(e)}")
-            raise
-            
+        """Fit the model with feature scaling."""
+        if not self._is_fitted:
+            X_scaled = self.scaler.fit_transform(X)
+            self._is_fitted = True
+        else:
+            X_scaled = self.scaler.transform(X)
+        return super().fit(X_scaled, y)
+        
     def predict(self, X):
-        """Predict using the model."""
-        return self.model.predict(X)
+        """Predict with feature scaling."""
+        X_scaled = self.scaler.transform(X)
+        return super().predict(X_scaled)
 
 
 class SVMWrapper(ClassifierWrapper):
@@ -267,32 +263,43 @@ class DecisionTreeWrapper(ClassifierWrapper):
 
 
 class ModelFactory:
-    """Factory for creating models."""
+    """Factory class for creating models."""
     
     @staticmethod
-    def create_model(model_name: str, **kwargs) -> BaseEstimator:
-        """Create model based on name.
-        
-        Args:
-            model_name: Name of the model to create
-            **kwargs: Additional arguments for model creation
-            
-        Returns:
-            Created model instance
-        """
-        models = {
-            'SVM': SVMWrapper,
-            'RF': RandomForestWrapper,
-            'DT': DecisionTreeWrapper,
-            'KNN': KNeighborsWrapper,
-            'LogisticRegression': LogisticRegressionWrapper,
-            'KNeighborsClassifier': KNeighborsWrapper,
-        }
-        
-        if model_name not in models:
-            raise ValueError(f"Unknown model: {model_name}")
-            
-        return models[model_name](**kwargs)
+    def create_model(model_name: str) -> BaseEstimator:
+        """Create a model instance based on the model name."""
+        if model_name == 'LogisticRegression':
+            return LogisticRegression(
+                multi_class='ovr',      # One-vs-rest is faster than multinomial
+                max_iter=100,           # Reduce max iterations
+                solver='saga',          # Fast solver for large datasets
+                tol=1e-2,              # Looser tolerance for faster convergence
+                n_jobs=-1,             # Use all CPU cores
+                C=0.1,                 # Stronger regularization
+                warm_start=True,       # Reuse previous solution
+                dual=False,            # Primal formulation is faster for n_samples > n_features
+                penalty='l2'           # L2 regularization is faster than L1
+            )
+        elif model_name == 'RandomForest':
+            return RandomForestClassifier(
+                n_estimators=100,
+                n_jobs=-1,
+                max_depth=10   # Limit depth for faster training
+            )
+        elif model_name == 'SVM':
+            return SVC(
+                kernel='rbf',
+                probability=True,
+                max_iter=200,  # Add iteration limit
+                tol=1e-3       # Looser tolerance
+            )
+        elif model_name == 'KNeighbors':
+            return KNeighborsClassifier(
+                n_neighbors=5,
+                n_jobs=-1      # Use all CPU cores
+            )
+        else:
+            raise ValueError(f"Unsupported model: {model_name}")
 
     @staticmethod
     def get_classifier(model_name: str, **kwargs):

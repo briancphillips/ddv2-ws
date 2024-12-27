@@ -1,133 +1,91 @@
 # DynaDetect v2
 
-A dynamic poisoning detection framework for machine learning models, focusing on robust detection of poisoning attacks in image classification tasks.
+A robust framework for evaluating and improving machine learning model resilience against data poisoning attacks.
 
-## Features
+## Overview
 
-### Attack Methods
-- Label Flipping Attacks:
-  - Random-to-Random
-  - Random-to-Target
-  - Source-to-Target
-- Gradient-based Attacks:
-  - PGD (Projected Gradient Descent)
-  - Custom attack strength and iterations
+DynaDetect v2 is a comprehensive framework designed to:
 
-### Supported Datasets
-- CIFAR-100 (primary dataset)
-- GTSRB (German Traffic Sign Recognition Benchmark)
-- ImageNette
-
-### Classifiers
-- Logistic Regression
-- K-Nearest Neighbors (KNN)
-- Support Vector Machine (SVM)
-- Random Forest
-- All classifiers support both standard and DynaDetect modes
-
-### Framework Features
-- Comprehensive experiment configuration system
-- Dynamic feature extraction with ResNet50
-- Automatic dimensionality handling (PCA/padding)
-- Robust training procedures with sample weights
-- Extensive metrics collection and analysis
-- GPU-accelerated computations where applicable
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/ddv2-ws.git
-cd ddv2-ws
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Environment setup:
-- Requires Python environment with GPU support
-- CUDA toolkit recommended for GPU acceleration
-
-## Usage
-
-### Running Experiments
-
-Full evaluation:
-```bash
-python experiments/run_full_evaluation.py
-```
-
-Test mode with reduced dataset:
-```bash
-python experiments/run_full_evaluation.py --test
-```
-
-### Configuration
-
-Experiment configurations in `experiments/config.py`:
-- Dataset configurations (sample sizes, preprocessing)
-- Attack parameters (poison rates, attack methods)
-- Model configurations (classifiers, modes)
-- Training parameters (batch size, learning rate)
+- Evaluate model performance under various poisoning scenarios
+- Implement dynamic detection of poisoned data
+- Support both image and numerical datasets
+- Provide extensive visualization and analysis tools
 
 ## Project Structure
 
 ```
-ddv2-ws/
-├── dynadetectv2/                # Core package
-│   ├── attacks/                 # Attack implementations
-│   ├── config/                  # Configuration management
-│   ├── core/                    # Core implementations
-│   │   ├── dataset.py          # Dataset handling
-│   │   ├── models.py           # Model implementations
-│   │   └── trainer.py          # Training logic
-│   ├── evaluation/             # Evaluation metrics and analysis
-│   └── main.py                 # Main entry point
-├── experiments/                 # Experiment framework
-│   ├── config.py               # Experiment configuration
-│   ├── results_collector.py    # Results collection utilities
-│   ├── run_experiments.py      # Basic experiment runner
-│   ├── run_full_evaluation.py  # Full evaluation suite
-│   └── test_dynadetect.py     # Testing utilities
-├── results/                    # Experiment results
-├── logs/                       # Experiment logs
-└── dynadetectv2.py            # Legacy implementation (to be deprecated)
+dynadetectv2/
+├── core/               # Core functionality
+│   ├── dataset.py     # Dataset handling and preprocessing
+│   ├── models.py      # Model implementations
+│   └── trainer.py     # Training utilities
+├── attacks/           # Attack implementations
+├── evaluation/        # Evaluation metrics and tools
+├── config/           # Configuration management
+└── main.py           # Main entry point
+
+experiments/
+├── results_management/  # Results handling and visualization
+├── utils/              # Utility functions
+└── run_full_evaluation.py  # Evaluation script
 ```
 
-### Key Components
+## Installation
 
-- `dynadetectv2/`: Core implementation package
-  - `attacks/`: Poisoning attack implementations
-  - `config/`: Configuration management system
-  - `core/`: Core ML components and utilities
-  - `evaluation/`: Metrics and analysis tools
-  - `main.py`: Main package entry point
+1. Clone the repository
+2. Install dependencies:
 
-- `experiments/`: Experiment framework
-  - `config.py`: Comprehensive configuration system
-  - `results_collector.py`: Results collection and analysis
-  - `run_full_evaluation.py`: Main experiment runner
-  - `test_dynadetect.py`: Testing and validation
+```bash
+pip install -r requirements.txt
+```
 
-- `results/` and `logs/`: Output directories
-  - Timestamped experiment results
-  - Detailed logging output
-  - Performance metrics and analysis
+## Usage
 
-## Results
+### Basic Usage
 
-Results are stored in two formats:
-- CSV files: Detailed metrics per experiment
-- JSON files: Complete experiment data including configurations
+Run a full evaluation:
 
-Key metrics tracked:
-- Model accuracy, precision, recall, F1-score
-- Per-class performance metrics
-- Attack effectiveness measurements
-- Resource utilization statistics
+```bash
+python experiments/run_full_evaluation.py
+```
+
+### Configuration
+
+The framework supports various configuration options through `ExperimentConfig`:
+
+- Dataset selection and parameters
+- Model selection
+- Attack scenarios
+- Evaluation metrics
+
+## Features
+
+- **Dynamic Detection**: Real-time detection of poisoned data during training
+- **Multiple Datasets**: Support for CIFAR100, GTSRB, ImageNette, and custom datasets
+- **Visualization Tools**: Comprehensive plotting and analysis utilities
+- **Memory Tracking**: Built-in memory usage monitoring
+- **Extensible**: Easy to add new models, attacks, and datasets
+
+## Development
+
+### Testing
+
+Run the test suite:
+
+```bash
+pytest tests/
+```
+
+### Adding New Components
+
+- Models: Extend `BaseModel` in `core/models.py`
+- Attacks: Implement in `attacks/` directory
+- Datasets: Add to `core/dataset.py`
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+[License details]
+
+## Contributing
+
+[Contribution guidelines]
