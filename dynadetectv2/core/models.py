@@ -565,25 +565,26 @@ class DecisionTreeModule(nn.Module):
 class RandomForestWrapper(BaseModel):
     """GPU-accelerated Random Forest using PyTorch."""
     
-    def __init__(self, n_estimators=100, max_depth=12, learning_rate=0.001, 
-                 batch_size=256, n_epochs=30, weight_decay=0.01,
-                 validation_fraction=0.1, early_stopping=True,
-                 n_iter_no_change=5, tol=0.001, verbose=True):
+    def __init__(self, n_estimators=50, max_depth=8, learning_rate=0.001, 
+                 batch_size=512, n_epochs=10, weight_decay=0.01,
+                 validation_fraction=0.05, early_stopping=True,
+                 n_iter_no_change=3, tol=0.005, verbose=True):
         super().__init__()
-        self.n_estimators = n_estimators  # Increased trees
-        self.max_depth = max_depth  # Increased depth
-        self.learning_rate = learning_rate  # Reduced learning rate
-        self.batch_size = batch_size
-        self.n_epochs = n_epochs  # Increased epochs
-        self.weight_decay = weight_decay  # Increased regularization
-        self.validation_fraction = validation_fraction
+        self.n_estimators = n_estimators  # Reduced number of trees
+        self.max_depth = max_depth  # Reduced depth
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size  # Increased batch size
+        self.n_epochs = n_epochs  # Reduced epochs
+        self.weight_decay = weight_decay
+        self.validation_fraction = validation_fraction  # Reduced validation fraction
         self.early_stopping = early_stopping
-        self.n_iter_no_change = n_iter_no_change  # More patience
-        self.tol = tol  # Tighter tolerance
+        self.n_iter_no_change = n_iter_no_change  # More aggressive early stopping
+        self.tol = tol  # Looser tolerance
         self.verbose = verbose
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"Using device: {self.device}")
+        self.chunk_size = 10  # Process trees in chunks
 
     def _init_forest(self, input_dim, n_classes):
         """Initialize the forest of decision trees."""
@@ -649,9 +650,15 @@ class RandomForestWrapper(BaseModel):
                 for batch_X, batch_y in train_loader:
                     self.optimizer.zero_grad()
                     
-                    # Forward pass through all trees in parallel
-                    outputs = torch.stack([tree(batch_X) for tree in self.trees])
-                    ensemble_output = outputs.mean(dim=0)
+                    # Process trees in chunks to reduce memory usage
+                    chunk_outputs = []
+                    for i in range(0, len(self.trees), self.chunk_size):
+                        chunk_trees = self.trees[i:i+self.chunk_size]
+                        outputs = torch.stack([tree(batch_X) for tree in chunk_trees])
+                        chunk_outputs.append(outputs.mean(dim=0))
+                    
+                    # Average predictions across all chunks
+                    ensemble_output = torch.stack(chunk_outputs).mean(dim=0)
                     
                     # Compute loss
                     loss = criterion(ensemble_output, batch_y)
@@ -661,12 +668,12 @@ class RandomForestWrapper(BaseModel):
                     
                     # Backward pass and optimization
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.trees.parameters(), max_norm=1.0)  # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(self.trees.parameters(), max_norm=1.0)
                     self.optimizer.step()
                     
                     total_loss += loss.item()
                     n_batches += 1
-                
+
                 avg_train_loss = total_loss / n_batches
                 
                 # Validation
@@ -677,8 +684,14 @@ class RandomForestWrapper(BaseModel):
                 
                 with torch.no_grad():
                     for batch_X, batch_y in val_loader:
-                        outputs = torch.stack([tree(batch_X) for tree in self.trees])
-                        ensemble_output = outputs.mean(dim=0)
+                        # Process trees in chunks during validation
+                        chunk_outputs = []
+                        for i in range(0, len(self.trees), self.chunk_size):
+                            chunk_trees = self.trees[i:i+self.chunk_size]
+                            outputs = torch.stack([tree(batch_X) for tree in chunk_trees])
+                            chunk_outputs.append(outputs.mean(dim=0))
+                        
+                        ensemble_output = torch.stack(chunk_outputs).mean(dim=0)
                         loss = criterion(ensemble_output, batch_y)
                         val_loss += loss.item()
                         n_val_batches += 1
@@ -688,7 +701,7 @@ class RandomForestWrapper(BaseModel):
                 if self.verbose:
                     self.logger.info(f"Epoch {epoch+1}/{self.n_epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
                 
-                # Early stopping
+                # Early stopping with looser tolerance
                 if self.early_stopping:
                     if avg_val_loss < best_val_loss - self.tol:
                         best_val_loss = avg_val_loss
@@ -699,7 +712,7 @@ class RandomForestWrapper(BaseModel):
                     if no_improvement_count >= self.n_iter_no_change:
                         self.logger.info(f"Early stopping triggered at epoch {epoch+1}")
                         break
-            
+
             training_time = time.time() - start_time
             self.logger.info(f"Training completed in {training_time:.2f}s")
             self.logger.info(f"Final memory usage: CPU {psutil.Process().memory_info().rss / 1024 / 1024:.1f} MB, GPU {torch.cuda.memory_allocated() / 1024 / 1024:.1f} MB")
