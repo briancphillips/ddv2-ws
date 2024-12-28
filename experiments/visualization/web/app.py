@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner=False)
 def load_data():
     """Load and cache the results data."""
     try:
@@ -177,6 +177,13 @@ def main():
         # Sidebar controls
         with st.sidebar:
             st.header("Analysis Controls")
+            
+            # Add refresh button at the top
+            if st.button("🔄 Refresh Data"):
+                st.cache_data.clear()
+                st.rerun()
+            
+            st.divider()  # Add visual separator
             
             # Dataset and Classifier Selection
             datasets = sorted(df['dataset'].unique())

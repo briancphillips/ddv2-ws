@@ -9,45 +9,43 @@ class ResultsLoader:
     
     def __init__(self, results_dir: str = "results"):
         """Initialize the loader with results directory path."""
-        self.results_dir = results_dir
-        self.archive_dir = os.path.join(results_dir, "archive")
+        # Get absolute path to workspace root
+        workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        self.results_dir = os.path.join(workspace_root, "results")
+        self.archive_dir = os.path.join(self.results_dir, "archive")
         self._cached_data = None
+        print(f"Results directory: {self.results_dir}")  # Debug print
         
     def load_latest_results(self, include_archived: bool = True) -> pd.DataFrame:
-        """Load the most recent results file and optionally combine with archived results."""
+        """Load the most recent results file."""
         results_files = self._get_results_files()
+        print(f"Found results files: {results_files}")  # Debug print
         if not results_files:
-            raise FileNotFoundError("No results files found")
+            raise FileNotFoundError(f"No results files found in {self.results_dir}")
+        
+        try:
+            latest_file = results_files[0]
+            print(f"Loading latest file: {latest_file}")  # Debug print
+            # Read only the most recent file
+            df = pd.read_csv(latest_file, on_bad_lines='skip')
+            print(f"Loaded data shape: {df.shape}")  # Debug print
             
-        dfs = []
-        for file in results_files:
-            try:
-                # Read the data with on_bad_lines='skip' to handle malformed rows
-                df = pd.read_csv(file, on_bad_lines='skip')
-                dfs.append(df)
-            except Exception as e:
-                print(f"Error loading {file}: {str(e)}")
-                continue
-        
-        if not dfs:
-            raise FileNotFoundError("No valid results files found")
+            # Convert only numeric columns, keeping categorical columns as strings
+            numeric_cols = ['iteration', 'total_images', 'num_poisoned', 'latency', 
+                           'accuracy', 'precision', 'recall', 'f1']
+            numeric_cols.extend([col for col in df.columns if 
+                               any(col.startswith(prefix) for prefix in 
+                                   ['precision_class_', 'recall_class_', 'f1_class_'])])
             
-        # Combine all dataframes
-        combined_df = pd.concat(dfs, ignore_index=True)
-        
-        # Convert only numeric columns, keeping categorical columns as strings
-        numeric_cols = ['iteration', 'total_images', 'num_poisoned', 'latency', 
-                       'accuracy', 'precision', 'recall', 'f1']
-        numeric_cols.extend([col for col in combined_df.columns if 
-                           any(col.startswith(prefix) for prefix in 
-                               ['precision_class_', 'recall_class_', 'f1_class_'])])
-        
-        for col in numeric_cols:
-            if col in combined_df.columns:
-                combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce')
-                combined_df[col] = combined_df[col].fillna(0)  # Replace NaN with 0
-        
-        return combined_df
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    df[col] = df[col].fillna(0)  # Replace NaN with 0
+            
+            return df
+        except Exception as e:
+            print(f"Error loading {results_files[0]}: {str(e)}")  # Debug print
+            raise FileNotFoundError(f"Could not load the latest results file: {str(e)}")
     
     def load_results_by_timestamp(self, timestamp: str) -> pd.DataFrame:
         """Load results file for specific timestamp."""
@@ -91,15 +89,18 @@ class ResultsLoader:
             files.extend([
                 os.path.join(self.results_dir, f) 
                 for f in os.listdir(self.results_dir)
-                if f.endswith('.csv')
+                if f.endswith('.csv') and f != 'archive'
             ])
             
-        # Check archived results
-        if os.path.exists(self.archive_dir):
-            files.extend([
-                os.path.join(self.archive_dir, f)
-                for f in os.listdir(self.archive_dir)
-                if f.endswith('.csv')
-            ])
+            # Sort files by timestamp in filename
+            files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
             
-        return files 
+            # Print files found for debugging
+            print(f"Files in {self.results_dir}:")
+            for f in os.listdir(self.results_dir):
+                print(f"  - {f}")
+        else:
+            print(f"Results directory not found: {self.results_dir}")
+        
+        # Return only the most recent file
+        return files[:1] if files else [] 
