@@ -14,7 +14,7 @@ from ..core.trainer import DynaDetectTrainer
 from ..core.dataset import DatasetHandler
 from ..core.models import ModelFactory
 from .metrics import calculate_metrics
-from ..config import DatasetConfig
+from ..config import DatasetConfig, DATASET_SIZES
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression, SGDClassifier
@@ -375,7 +375,7 @@ class DatasetEvaluator(ModelEvaluator):
                 latency=latency,
                 iteration=iteration,
                 classifier_name=self.classifier_name,
-                total_images=len(val_dataset),
+                total_images=len(train_labels),  # Use actual training set size
                 timestamp=timestamp
             )
             

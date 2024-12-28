@@ -27,9 +27,9 @@ class ExperimentConfig:
 
 # Constants
 DATASET_CONFIGS = {
-    'GTSRB': {'type': 'image', 'num_classes': 43},
-    'CIFAR100': {'type': 'image', 'num_classes': 100},
     'ImageNette': {'type': 'image', 'num_classes': 10},
+    'CIFAR100': {'type': 'image', 'num_classes': 100},
+    'GTSRB': {'type': 'image', 'num_classes': 43},
 }
 
 POISON_RATES = [0.01, 0.03, 0.05, 0.07, 0.10, 0.20]  # 1%, 3%, 5%, 7%, 10%, 20%
@@ -172,7 +172,7 @@ class ConfigurationManager:
             datasets=all_datasets,
             classifiers=CLASSIFIERS,
             modes=MODES,
-            iterations=5,
+            iterations=1,
             seed=self.seed,
             results_file='experiment_results.csv'
         )

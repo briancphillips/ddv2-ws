@@ -182,7 +182,7 @@ def main():
         print("Getting configurations...")
         config = config_manager.get_test_configs() if args.test else config_manager.get_full_configs()
         
-        # Set the results filename with the same timestamp
+        # Set the results filename with timestamp
         config.results_file = f'experiment_results_{timestamp}.csv'
         
         print(f"\nEvaluation Plan:")

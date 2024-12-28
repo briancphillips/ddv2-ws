@@ -37,6 +37,13 @@
 - [x] Experiment configuration management
 - [x] Full evaluation pipeline
 - [x] Test mode for quick validation
+- [x] Fixed dataset sizes to use full training sets instead of test samples
+  - [x] CIFAR100: 50,000 samples
+  - [x] GTSRB: 39,209 samples
+  - [x] ImageNette: 9,469 samples
+- [x] Verified dataset order in evaluation
+  - [x] Ran with CIFAR100 first
+  - [x] Changed to run with ImageNette first
 
 ### Analysis Tools
 

@@ -26,6 +26,12 @@ def load_data():
         loader = ResultsLoader()
         df = loader.load_latest_results()
         
+        # Ensure categorical columns are strings
+        categorical_cols = ['dataset', 'classifier', 'mode', 'modification_method', 'flip_type']
+        for col in categorical_cols:
+            if col in df.columns:
+                df[col] = df[col].astype(str)
+        
         # Apply data validation rules
         # Rule 1: If modification_method is not label_flipping, set flip_type to None
         df.loc[df['modification_method'] != 'label_flipping', 'flip_type'] = None
@@ -50,31 +56,65 @@ def validate_metric_selection(df: pd.DataFrame, metric: str, modification_method
 def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = None):
     """Create a plot based on the specified type and parameters."""
     try:
+        if df.empty:
+            st.warning("No data available for plotting")
+            return None
+            
         df = df.copy()
         
         # Handle poison rates if needed
         if x == 'num_poisoned' or y == 'num_poisoned':
-            # Define mapping from num_poisoned to poison rate
-            poison_mapping = {
-                50: 1,    # 1%
-                150: 3,   # 3%
-                250: 5,   # 5%
-                350: 7,   # 7%
-                500: 10,  # 10%
-                1000: 20  # 20%
+            # Filter out clean baselines (num_poisoned = 0)
+            df = df[df['num_poisoned'] > 0]
+            
+            # Define dataset-specific mappings for standard rates
+            rate_mappings = {
+                'GTSRB': {
+                    1: int(39209 * 0.01),    # 1%
+                    3: int(39209 * 0.03),    # 3%
+                    5: int(39209 * 0.05),    # 5%
+                    7: int(39209 * 0.07),    # 7%
+                    10: int(39209 * 0.10),   # 10%
+                    20: int(39209 * 0.20)    # 20%
+                },
+                'CIFAR100': {
+                    1: int(50000 * 0.01),    # 1%
+                    3: int(50000 * 0.03),    # 3%
+                    5: int(50000 * 0.05),    # 5%
+                    7: int(50000 * 0.07),    # 7%
+                    10: int(50000 * 0.10),   # 10%
+                    20: int(50000 * 0.20)    # 20%
+                },
+                'ImageNette': {
+                    1: int(9469 * 0.01),    # 1%
+                    3: int(9469 * 0.03),    # 3%
+                    5: int(9469 * 0.05),    # 5%
+                    7: int(9469 * 0.07),    # 7%
+                    10: int(9469 * 0.10),   # 10%
+                    20: int(9469 * 0.20)    # 20%
+                }
             }
             
-            # Create poison_rate column based on mapping
-            df['poison_rate'] = df['num_poisoned'].map(poison_mapping)  # Already in percentage
+            # Create poison rate column based on dataset
+            df['poison_rate'] = df.apply(
+                lambda row: next(
+                    (rate for rate, num in rate_mappings[row['dataset']].items() 
+                     if abs(row['num_poisoned'] - num) < 10),
+                    float('nan')  # Return NaN if no mapping found
+                ),
+                axis=1
+            )
             
-            # Filter out any rows that don't match our predefined rates
-            df = df[df['num_poisoned'].isin(poison_mapping.keys())]
+            # Filter to only include mapped rates for each dataset
+            valid_nums = [num for mapping in rate_mappings.values() for num in mapping.values()]
+            df = df[df.apply(lambda row: any(abs(row['num_poisoned'] - rate_mappings[row['dataset']][rate]) < 10 
+                                           for rate in rate_mappings[row['dataset']]), axis=1)]
             
             if x == 'num_poisoned':
-                grouped = df.groupby(['poison_rate', color])[y].mean().reset_index()
+                grouped = df.groupby(['poison_rate', color], observed=True)[y].mean().reset_index()
                 x = 'poison_rate'
             if y == 'num_poisoned':
-                grouped = df.groupby(['poison_rate', color])[x].mean().reset_index()
+                grouped = df.groupby(['poison_rate', color], observed=True)[x].mean().reset_index()
                 y = 'poison_rate'
             df = grouped
         
@@ -94,7 +134,7 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 xaxis=dict(
                     type='category',  # Force categorical axis
                     categoryorder='array',
-                    categoryarray=['1', '3', '5', '7', '10', '20']  # Predefined rates as strings
+                    categoryarray=[1, 3, 5, 7, 10, 20]  # Standard rates
                 )
             )
         if y == 'poison_rate':
@@ -103,7 +143,7 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 yaxis=dict(
                     type='category',  # Force categorical axis
                     categoryorder='array',
-                    categoryarray=['1', '3', '5', '7', '10', '20']  # Predefined rates as strings
+                    categoryarray=[1, 3, 5, 7, 10, 20]  # Standard rates
                 )
             )
         
@@ -143,7 +183,7 @@ def main():
             selected_datasets = st.multiselect(
                 "Datasets",
                 datasets,
-                default=[],
+                default=[],  # Empty default to show all datasets
                 key='datasets'
             )
             
@@ -151,7 +191,7 @@ def main():
             selected_classifiers = st.multiselect(
                 "Classifiers",
                 classifiers,
-                default=[],
+                default=['LogisticRegression', 'RandomForest'],
                 key='classifiers'
             )
             
@@ -159,9 +199,13 @@ def main():
             plot_type = st.selectbox(
                 "Plot Type",
                 ["Line", "Bar", "Box", "Scatter"],
-                index=0,
+                index=0,  # Line plot
                 key='plot_type'
             )
+            
+            # Get numeric columns for metrics
+            numeric_cols = sorted([col for col in df.select_dtypes(include=['float64', 'int64']).columns
+                                if not col.startswith('Unnamed')])
             
             # Get current modification method for metric validation
             current_mod_method = None
@@ -171,21 +215,27 @@ def main():
                     current_mod_method = mod_methods[0]
             
             # Metric Selection - filter based on modification method
-            numeric_cols = sorted([col for col in df.select_dtypes(include=['float64', 'int64']).columns
-                                if not col.startswith('Unnamed') and 
-                                validate_metric_selection(df, col, current_mod_method)])
+            valid_metrics = [col for col in numeric_cols 
+                           if validate_metric_selection(df, col, current_mod_method)]
+            
+            # Set default metric to accuracy if available
+            default_metric_index = valid_metrics.index('accuracy') if 'accuracy' in valid_metrics else 0
+            
             metric = st.selectbox(
                 "Metric",
-                numeric_cols,
-                index=0 if numeric_cols else None,
+                valid_metrics,
+                index=default_metric_index,
                 key='metric'
             )
             
             # Group By Selection
+            categorical_cols = df.select_dtypes(include=['object']).columns
+            group_options = ["Number of Poisoned Samples"] + sorted(list(categorical_cols))
+            
             group_by = st.selectbox(
                 "Group By",
-                ["Number of Poisoned Samples", "dataset", "classifier", "modification_method"],
-                index=0,
+                group_options,
+                index=0,  # Number of Poisoned Samples
                 key='group_by'
             )
             
@@ -193,10 +243,11 @@ def main():
             if group_by == "Number of Poisoned Samples":
                 group_by = "num_poisoned"
             
+            # Color By Selection - only show categorical columns
             color_by = st.selectbox(
                 "Color By",
-                ["mode", "modification_method", "dataset", "classifier"],
-                index=0,
+                sorted(list(categorical_cols)),
+                index=list(sorted(categorical_cols)).index('mode') if 'mode' in categorical_cols else 0,
                 key='color_by'
             )
         
