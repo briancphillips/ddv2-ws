@@ -4,7 +4,7 @@ from typing import Optional, Tuple, List, Dict, Any
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset
-from torchvision import datasets, transforms
+from torchvision import datasets, transforms, models
 import numpy as np
 import logging
 from dataclasses import dataclass
@@ -18,6 +18,22 @@ import zipfile
 from PIL import Image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class FeatureExtractor(nn.Module):
+    """Feature extractor using pretrained ResNet."""
+    
+    def __init__(self):
+        super().__init__()
+        # Load pretrained ResNet
+        self.model = models.resnet18(pretrained=True)
+        # Remove the final fully connected layer
+        self.model = nn.Sequential(*list(self.model.children())[:-1])
+        self.model = self.model.to(device)
+        self.model.eval()
+        
+    def forward(self, x):
+        with torch.no_grad():
+            return self.model(x).squeeze()
 
 @dataclass
 class DatasetSpecs:
@@ -130,9 +146,9 @@ class DatasetHandler:
         self.sample_size = dataset_config.sample_size
         self.root_dir = '/home/brian/Notebooks/ddv2-ws'
         self.transform = self.get_transform()
-        self.pca = None  # Store PCA object for consistent dimensionality
         self._feature_cache = {}  # Cache for extracted features
         self._label_flip_cache = {}  # Cache for flipped labels
+        self.feature_extractor = FeatureExtractor()  # Initialize feature extractor
         logging.info(f"Initialized DatasetHandler for {self.dataset_name}")
         logging.info(f"Dataset type: {self.get_dataset_type()}")
         logging.info(f"Sample size: {self.sample_size}")
@@ -163,18 +179,20 @@ class DatasetHandler:
             
         if "ImageNette" in self.dataset_name:
             return transforms.Compose([
-                transforms.Resize((32, 32)),  # Smaller size for testing
+                transforms.Resize(256),  # Resize shorter side to 256
+                transforms.CenterCrop(224),  # Center crop to 224x224
                 transforms.ToTensor(),
                 transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
             ])
         elif "CIFAR" in self.dataset_name:
             return transforms.Compose([
+                transforms.Resize(224),  # Resize to match ResNet input
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
             ])
         elif "GTSRB" in self.dataset_name:
             return transforms.Compose([
-                transforms.Resize((32, 32)),  # Standardize GTSRB size
+                transforms.Resize(224),  # Resize to match ResNet input
                 transforms.ToTensor(),
                 transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
             ])
@@ -307,48 +325,51 @@ class DatasetHandler:
         return dataset
     
     def extract_features(self, dataset: torch.utils.data.Dataset) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract features from dataset.
-        
-        Args:
-            dataset: Input dataset
-            
-        Returns:
-            Tuple of (features, labels)
-        """
+        """Extract features from dataset using pretrained ResNet."""
         # Generate cache key based on dataset object id and length
         cache_key = (id(dataset), len(dataset))
         if cache_key in self._feature_cache:
             logging.info("Using cached features")
             return self._feature_cache[cache_key]
-            
-        features = []
-        labels = []
+        
         total_samples = len(dataset)
+        batch_size = 128  # Process in batches to reduce memory usage
         
         logging.info(f"Extracting features from {total_samples} samples...")
         
-        # Extract raw features
-        for data, label in dataset:
-            if isinstance(data, torch.Tensor):
-                features.append(data.cpu().numpy().flatten())
-            else:
-                features.append(data.flatten())
-            labels.append(label)
-            
-        features = np.array(features)
-        labels = np.array(labels)
+        # Create DataLoader for batch processing
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
         
-        # Apply PCA if needed
-        if self.dataset_name == 'image' and features.shape[1] > 100:
-            logging.info(f"Fitting PCA to reduce dimensions from {features.shape[1]} to 100...")
-            pca = PCA(n_components=100)
-            features = pca.fit_transform(features)
-            
+        features_list = []
+        labels_list = []
+        
+        # Process in batches
+        with torch.cuda.amp.autocast():  # Use mixed precision
+            for batch_data, batch_labels in loader:
+                # Move batch to GPU
+                if isinstance(batch_data, torch.Tensor):
+                    batch_data = batch_data.to(device)
+                
+                # Extract features using ResNet
+                batch_features = self.feature_extractor(batch_data)
+                
+                # Keep on GPU
+                features_list.append(batch_features)
+                labels_list.append(batch_labels.to(device))
+        
+        # Combine batches on GPU
+        features = torch.cat(features_list, dim=0)
+        labels = torch.cat(labels_list, dim=0)
+        
         logging.info(f"Feature extraction completed. Final feature shape: {features.shape}")
         
+        # Move to CPU only at the end
+        features_np = features.cpu().numpy()
+        labels_np = labels.cpu().numpy()
+        
         # Cache the results
-        self._feature_cache[cache_key] = (features, labels)
-        return features, labels
+        self._feature_cache[cache_key] = (features_np, labels_np)
+        return features_np, labels_np
 
     def get_targets(self, dataset):
         """Get targets from dataset."""

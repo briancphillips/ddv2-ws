@@ -210,18 +210,18 @@ class ClassifierWrapper:
 class LogisticRegressionWrapper(BaseModel):
     """GPU-accelerated LogisticRegression using PyTorch."""
     
-    def __init__(self, learning_rate=0.01, max_iter=200, batch_size=128, weight_decay=0.0001,
-                 validation_fraction=0.1, early_stopping=True, n_iter_no_change=2,
-                 tol=0.01, verbose=True):
+    def __init__(self, learning_rate=0.001, max_iter=1000, batch_size=128, weight_decay=0.01,
+                 validation_fraction=0.1, early_stopping=True, n_iter_no_change=5,
+                 tol=0.001, verbose=True):
         super().__init__()
-        self.learning_rate = learning_rate
-        self.max_iter = max_iter
+        self.learning_rate = learning_rate  # Reduced learning rate
+        self.max_iter = max_iter  # Increased iterations
         self.batch_size = batch_size
-        self.weight_decay = weight_decay
+        self.weight_decay = weight_decay  # Increased regularization
         self.validation_fraction = validation_fraction
         self.early_stopping = early_stopping
-        self.n_iter_no_change = n_iter_no_change
-        self.tol = tol
+        self.n_iter_no_change = n_iter_no_change  # More patience
+        self.tol = tol  # Tighter tolerance
         self.verbose = verbose
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.logger = logging.getLogger(__name__)
@@ -356,19 +356,19 @@ class LogisticRegressionWrapper(BaseModel):
 
 
 class SVMWrapper(BaseModel):
-    def __init__(self, learning_rate=0.01, max_iter=25, batch_size=128, weight_decay=0.0001,
-                 margin=1.0, validation_fraction=0.1, early_stopping=True, n_iter_no_change=2,
-                 tol=0.01, verbose=True):
+    def __init__(self, learning_rate=0.001, max_iter=500, batch_size=128, weight_decay=0.01,
+                 margin=1.0, validation_fraction=0.1, early_stopping=True, n_iter_no_change=5,
+                 tol=0.001, verbose=True):
         super().__init__()
-        self.learning_rate = learning_rate
-        self.max_iter = max_iter
+        self.learning_rate = learning_rate  # Reduced learning rate
+        self.max_iter = max_iter  # Increased iterations
         self.batch_size = batch_size
-        self.weight_decay = weight_decay
+        self.weight_decay = weight_decay  # Increased regularization
         self.margin = margin
         self.validation_fraction = validation_fraction
         self.early_stopping = early_stopping
-        self.n_iter_no_change = n_iter_no_change
-        self.tol = tol
+        self.n_iter_no_change = n_iter_no_change  # More patience
+        self.tol = tol  # Tighter tolerance
         self.verbose = verbose
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.logger = logging.getLogger(__name__)
@@ -565,21 +565,21 @@ class DecisionTreeModule(nn.Module):
 class RandomForestWrapper(BaseModel):
     """GPU-accelerated Random Forest using PyTorch."""
     
-    def __init__(self, n_estimators=50, max_depth=8, learning_rate=0.01, 
-                 batch_size=256, n_epochs=15, weight_decay=0.0001,
+    def __init__(self, n_estimators=100, max_depth=12, learning_rate=0.001, 
+                 batch_size=256, n_epochs=30, weight_decay=0.01,
                  validation_fraction=0.1, early_stopping=True,
-                 n_iter_no_change=2, tol=0.01, verbose=True):
+                 n_iter_no_change=5, tol=0.001, verbose=True):
         super().__init__()
-        self.n_estimators = n_estimators  # Reduced number of trees
-        self.max_depth = max_depth  # Reduced depth
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size  # Increased batch size
-        self.n_epochs = n_epochs  # Reduced epochs
-        self.weight_decay = weight_decay
+        self.n_estimators = n_estimators  # Increased trees
+        self.max_depth = max_depth  # Increased depth
+        self.learning_rate = learning_rate  # Reduced learning rate
+        self.batch_size = batch_size
+        self.n_epochs = n_epochs  # Increased epochs
+        self.weight_decay = weight_decay  # Increased regularization
         self.validation_fraction = validation_fraction
         self.early_stopping = early_stopping
-        self.n_iter_no_change = n_iter_no_change
-        self.tol = tol
+        self.n_iter_no_change = n_iter_no_change  # More patience
+        self.tol = tol  # Tighter tolerance
         self.verbose = verbose
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.logger = logging.getLogger(__name__)

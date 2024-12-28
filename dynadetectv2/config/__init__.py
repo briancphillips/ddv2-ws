@@ -32,7 +32,7 @@ DATASET_CONFIGS = {
     'GTSRB': {'type': 'image', 'num_classes': 43},
 }
 
-POISON_RATES = [0.01, 0.03, 0.05, 0.07, 0.10, 0.20]  # 1%, 3%, 5%, 7%, 10%, 20%
+POISON_RATES = [0.0, 0.01, 0.03, 0.05, 0.07, 0.10, 0.20]  # Clean baseline, 1%, 3%, 5%, 7%, 10%, 20%
 
 ATTACK_METHODS = {
     'label_flipping': {
