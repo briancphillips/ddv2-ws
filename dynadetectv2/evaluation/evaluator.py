@@ -191,6 +191,13 @@ class ModelEvaluator:
             'f1': metrics['f1']
         }
         
+        # Add confusion matrix
+        if 'confusion_matrix' in metrics:
+            cm = metrics['confusion_matrix']
+            for i in range(len(cm)):
+                for j in range(len(cm[i])):
+                    result[f'confusion_matrix_{i}_{j}'] = cm[i][j]
+        
         # Add per-class metrics
         for i, (prec, rec, f1) in enumerate(zip(
             metrics['precision_per_class'],
@@ -200,7 +207,93 @@ class ModelEvaluator:
             result[f'precision_class_{i}'] = prec
             result[f'recall_class_{i}'] = rec
             result[f'f1_class_{i}'] = f1
-        
+            
+        # Add class accuracies if available
+        if 'class_accuracies' in metrics:
+            for i, acc in enumerate(metrics['class_accuracies']):
+                result[f'accuracy_class_{i}'] = acc
+                
+        # Add attack-specific metrics if available
+        if 'attack_type' in metrics:
+            result['attack_type'] = metrics['attack_type']
+        if 'target_class' in metrics:
+            result['target_class'] = metrics['target_class']
+        if 'source_class' in metrics:
+            result['source_class'] = metrics['source_class']
+        if 'poison_rate' in metrics:
+            result['poison_rate'] = metrics['poison_rate']
+        if 'num_poisoned_samples' in metrics:
+            result['num_poisoned_samples'] = metrics['num_poisoned_samples']
+            
+        # Add training metrics if available
+        if 'train_metrics' in metrics:
+            train_metrics = metrics['train_metrics']
+            result['train_accuracy'] = train_metrics.get('accuracy', 0)
+            result['train_precision'] = train_metrics.get('precision', 0)
+            result['train_recall'] = train_metrics.get('recall', 0)
+            result['train_f1'] = train_metrics.get('f1', 0)
+            
+            # Add per-class training metrics
+            if 'precision_per_class' in train_metrics:
+                for i, (prec, rec, f1) in enumerate(zip(
+                    train_metrics['precision_per_class'],
+                    train_metrics['recall_per_class'],
+                    train_metrics['f1_per_class']
+                )):
+                    result[f'train_precision_class_{i}'] = prec
+                    result[f'train_recall_class_{i}'] = rec
+                    result[f'train_f1_class_{i}'] = f1
+                    
+        # Add validation metrics if available
+        if 'val_metrics' in metrics:
+            val_metrics = metrics['val_metrics']
+            result['val_accuracy'] = val_metrics.get('accuracy', 0)
+            result['val_precision'] = val_metrics.get('precision', 0)
+            result['val_recall'] = val_metrics.get('recall', 0)
+            result['val_f1'] = val_metrics.get('f1', 0)
+            
+            # Add per-class validation metrics
+            if 'precision_per_class' in val_metrics:
+                for i, (prec, rec, f1) in enumerate(zip(
+                    val_metrics['precision_per_class'],
+                    val_metrics['recall_per_class'],
+                    val_metrics['f1_per_class']
+                )):
+                    result[f'val_precision_class_{i}'] = prec
+                    result[f'val_recall_class_{i}'] = rec
+                    result[f'val_f1_class_{i}'] = f1
+                    
+        # Add resource usage metrics
+        if 'memory_usage' in metrics:
+            result['memory_usage'] = metrics['memory_usage']
+        if 'cpu_usage' in metrics:
+            result['cpu_usage'] = metrics['cpu_usage']
+        if 'gpu_usage' in metrics:
+            result['gpu_usage'] = metrics['gpu_usage']
+            
+        # Add timing metrics
+        if 'training_time' in metrics:
+            result['training_time'] = metrics['training_time']
+        if 'inference_time' in metrics:
+            result['inference_time'] = metrics['inference_time']
+        if 'feature_extraction_time' in metrics:
+            result['feature_extraction_time'] = metrics['feature_extraction_time']
+            
+        # Add model-specific metrics
+        if 'model_size' in metrics:
+            result['model_size'] = metrics['model_size']
+        if 'num_parameters' in metrics:
+            result['num_parameters'] = metrics['num_parameters']
+            
+        # Add dataset-specific metrics
+        if 'dataset_size' in metrics:
+            result['dataset_size'] = metrics['dataset_size']
+        if 'num_classes' in metrics:
+            result['num_classes'] = metrics['num_classes']
+        if 'class_distribution' in metrics:
+            for i, count in enumerate(metrics['class_distribution']):
+                result[f'class_{i}_count'] = count
+                
         self.results.append(result)
         
     def save_results(self, timestamp: str) -> None:
@@ -239,12 +332,21 @@ class ModelEvaluator:
         
         # Sort fieldnames to ensure consistent column order
         sorted_fieldnames = sorted(fieldnames, key=lambda x: (
-            # Primary sort for main metrics
-            0 if x in ['timestamp', 'dataset', 'classifier', 'iteration', 
+            # Primary sort for main metrics and metadata
+            0 if x in ['timestamp', 'dataset', 'classifier', 'mode', 'iteration', 
                       'total_images', 'num_poisoned', 'poisoned_classes',
-                      'modification_method', 'flip_type', 'latency',
-                      'accuracy', 'precision', 'recall', 'f1'] else 1,
-            # Secondary sort alphabetically
+                      'modification_method', 'flip_type', 'latency'] else
+            # Secondary sort for main performance metrics
+            1 if x in ['accuracy', 'precision', 'recall', 'f1'] else
+            # Tertiary sort for attack-specific metrics
+            2 if x in ['attack_type', 'target_class', 'source_class', 'poison_rate', 'num_poisoned_samples'] else
+            # Quaternary sort for per-class metrics
+            3 if any(x.startswith(prefix) for prefix in ['precision_class_', 'recall_class_', 'f1_class_', 'accuracy_class_']) else
+            # Quinary sort for confusion matrix
+            4 if x.startswith('confusion_matrix_') else
+            # Final sort alphabetically
+            5,
+            # Secondary sort alphabetically within each group
             x
         ))
         
@@ -365,6 +467,8 @@ class DatasetEvaluator(ModelEvaluator):
             
             # Compute and log metrics
             metrics = calculate_metrics(val_labels, predictions)
+            metrics['poison_rate'] = poison_rate  # Add poison rate to metrics
+            metrics['num_poisoned_samples'] = int(len(train_labels) * poison_rate) if poison_rate > 0 else 0
             self.log_results(
                 metrics=metrics,
                 dataset_name=self.config.name,

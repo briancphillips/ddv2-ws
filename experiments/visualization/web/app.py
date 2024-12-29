@@ -42,16 +42,15 @@ def calculate_poison_rate(num_poisoned: int, total_images: int, dataset: str) ->
         return 0
         
     # Calculate tolerance based on dataset size
-    tolerance = get_tolerance(max(mapping.values()))
+    tolerance = total_images * 0.001  # 0.1% of total images
     
     # Find the closest standard rate within tolerance
     for rate, expected_count in mapping.items():
         if abs(num_poisoned - expected_count) <= tolerance:
             return rate
             
-    # If no match found within tolerance, find the closest rate
-    closest_rate = min(mapping.items(), key=lambda x: abs(x[1] - num_poisoned))[0]
-    return closest_rate
+    # If no match found within tolerance, calculate actual rate
+    return round((num_poisoned / total_images) * 100)
 
 def get_tolerance(dataset_size: int) -> int:
     """Calculate tolerance for poison rate mapping based on dataset size."""
@@ -188,6 +187,11 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
         # Define consistent color scheme for modes
         mode_colors = {'standard': 'rgb(31, 119, 180)', 'dynadetect': 'rgb(255, 127, 14)'}
         
+        # Get unique poison rates and create tick values
+        unique_rates = sorted(df['poison_rate'].unique())
+        tick_values = unique_rates
+        tick_text = [f"{rate}%" if rate > 0 else "Clean" for rate in unique_rates]
+        
         # Create base plot
         if plot_type == "Line":
             fig = px.line(
@@ -234,9 +238,9 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
             axis_config = dict(
                 type='category',
                 categoryorder='array',
-                categoryarray=[0, 1, 3, 5, 7, 10, 20],
-                ticktext=['Clean', '1%', '3%', '5%', '7%', '10%', '20%'],
-                tickvals=[0, 1, 3, 5, 7, 10, 20]
+                categoryarray=tick_values,
+                ticktext=tick_text,
+                tickvals=tick_values
             )
             
             if x == 'poison_rate':
@@ -336,6 +340,11 @@ def create_improvement_plot(df: pd.DataFrame, metric: str, plot_type: str = "Bar
     """Create a plot showing the improvement of dynadetect over standard mode."""
     improvement_df = calculate_improvement(df, metric)
     
+    # Get unique poison rates and create tick values
+    unique_rates = sorted(improvement_df['poison_rate'].unique())
+    tick_values = unique_rates
+    tick_text = [f"{rate}%" if rate > 0 else "Clean" for rate in unique_rates]
+    
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
@@ -370,9 +379,9 @@ def create_improvement_plot(df: pd.DataFrame, metric: str, plot_type: str = "Bar
         xaxis=dict(
             type='category',
             categoryorder='array',
-            categoryarray=[0, 1, 3, 5, 7, 10, 20],
-            ticktext=['Clean', '1%', '3%', '5%', '7%', '10%', '20%'],
-            tickvals=[0, 1, 3, 5, 7, 10, 20]
+            categoryarray=tick_values,
+            ticktext=tick_text,
+            tickvals=tick_values
         ),
         yaxis_title=f"Absolute {metric.title()} Improvement",
         yaxis2_title="Relative Improvement (%)",
