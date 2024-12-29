@@ -1,75 +1,180 @@
-# Feature Extractor Implementation
+# Feature Extraction System
 
 ## Overview
 
-Implementation of EfficientNetB0 as a unified feature extractor for all image datasets in DynaDetect v2.
+The feature extraction system in DynaDetect v2 uses a WideResNet architecture to extract meaningful features from input data, particularly optimized for the GTSRB dataset.
 
 ## Implementation Details
 
-### 1. Feature Extractor Architecture
+### Architecture (`core/dataset.py`)
 
-- Using EfficientNetB0 pretrained model
-- Output feature dimension: 1280 (EfficientNetB0's default feature dimension)
-- GPU-accelerated with automatic mixed precision
-- Batch processing for memory efficiency
+1. **WideResNet Components**
 
-### 2. Dataset Processing
+   ```python
+   class BasicBlock(nn.Module):
+       # Basic building block with residual connections
+       def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
+           # Convolutional layers with batch normalization
+           # Dropout for regularization
+           # Residual connections
 
-- Image resizing to 224x224 (EfficientNetB0's standard input size)
-- Dataset-specific normalization maintained:
-  - ImageNette: (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-  - CIFAR: (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
-  - GTSRB: (0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629)
+   class NetworkBlock(nn.Module):
+       # Stacks multiple basic blocks
+       def __init__(self, nb_layers, in_planes, out_planes, block, stride, dropRate=0.0):
+           # Creates sequence of basic blocks
+           # Manages layer connections
 
-### 3. Performance Optimizations
+   class WideResNet(nn.Module):
+       # Main WideResNet architecture
+       def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0):
+           # Configurable depth and width
+           # Adaptive to different input sizes
+           # Multiple conv layers with increasing channels
+   ```
 
-- Feature caching system
-- Batch size: 32 (adjustable based on GPU memory)
-- 4 worker processes for data loading
-- Pin memory enabled for faster GPU transfer
-- Automatic mixed precision (torch.cuda.amp)
-- Progress tracking with tqdm
+2. **Feature Extractor**
 
-### 4. Memory Management
+   ```python
+   class FeatureExtractor(nn.Module):
+       def __init__(self, dataset_name: str):
+           # Initializes appropriate architecture
+           # Loads pretrained weights if available
+           # Configures for specific dataset
 
-- Batch processing to prevent OOM
-- Immediate CPU transfer after feature extraction
-- Numpy array conversion for classifier compatibility
-- Cached results for repeated access
+       def forward(self, x):
+           # Extracts features through network
+           # Returns feature vectors
+   ```
 
-## Testing Plan
+## Caching System
 
-### Phase 1: Initial Testing
+1. **Implementation**
 
-1. Run test evaluation on GTSRB dataset
-2. Verify feature extraction process
-3. Monitor memory usage and GPU utilization
-4. Validate feature dimensions and quality
+   ```python
+   class DatasetHandler:
+       def __init__(self, dataset_name: str, data_dir: str = ".datasets"):
+           self.cache_dir = os.path.join(data_dir, dataset_name, "cache")
+           self.feature_cache = {}
 
-### Phase 2: Full Implementation
+       def get_cached_features(self, dataset, cache_key):
+           # Check cache directory
+           # Load cached features if available
+           # Extract and cache if not found
+   ```
 
-1. Test with all datasets
-2. Fine-tune batch size if needed
-3. Optimize memory usage
-4. Validate classifier performance
+2. **Cache Management**
+   - Automatic cache directory creation
+   - Cache invalidation on model changes
+   - Memory-efficient loading
+   - Disk space management
 
-### Phase 3: Optimization
+## Dataset Support
 
-1. Analyze feature quality
-2. Consider dimensionality reduction if needed
-3. Fine-tune preprocessing parameters
-4. Optimize GPU memory usage
+1. **GTSRB Dataset**
 
-## Expected Benefits
+   ```python
+   class GTSRBDataset(Dataset):
+       def __init__(self, root_dir, train=True, transform=None, val_split=0.2):
+           # Loads GTSRB data
+           # Applies transformations
+           # Handles train/val split
+   ```
 
-1. More robust feature representation
-2. Better transfer learning capabilities
-3. Unified feature space across datasets
-4. Improved classification performance
+2. **Data Preprocessing**
+   - Image resizing and normalization
+   - Data augmentation (when applicable)
+   - Label processing
+   - Batch preparation
 
-## Monitoring Metrics
+## Feature Extraction Process
 
-1. Feature extraction time
-2. Memory usage (CPU/GPU)
-3. Classification accuracy
-4. Training/inference speed
+1. **Initialization**
+
+   ```python
+   # Create feature extractor
+   extractor = FeatureExtractor(dataset_name="GTSRB")
+
+   # Load pretrained weights
+   extractor.load_pretrained_wrn()
+   ```
+
+2. **Feature Extraction**
+
+   ```python
+   # Extract features with caching
+   features = dataset_handler.get_cached_features(
+       dataset=train_dataset,
+       cache_key="train_features"
+   )
+   ```
+
+3. **Memory Management**
+   - Batch processing for large datasets
+   - GPU memory optimization
+   - Cache size limits
+   - Automatic cleanup
+
+## Performance Considerations
+
+1. **Optimization Techniques**
+
+   - GPU acceleration when available
+   - Efficient tensor operations
+   - Batch size optimization
+   - Memory-mapped file handling
+
+2. **Resource Management**
+   - Memory usage monitoring
+   - Cache size control
+   - Disk space management
+   - Cleanup procedures
+
+## Usage Examples
+
+1. **Basic Usage**
+
+   ```python
+   # Initialize handler
+   handler = DatasetHandler(dataset_name="GTSRB")
+
+   # Get dataset
+   train_dataset = handler.get_train_data()
+
+   # Extract features
+   features = handler.get_cached_features(train_dataset, "train")
+   ```
+
+2. **Custom Configuration**
+
+   ```python
+   # Initialize with custom parameters
+   extractor = FeatureExtractor(
+       dataset_name="GTSRB",
+       cache_dir="custom/cache/path"
+   )
+
+   # Extract with specific batch size
+   features = extractor.extract_batch(
+       data_batch,
+       batch_size=32
+   )
+   ```
+
+## Current Limitations
+
+1. **Memory Usage**
+
+   - High memory consumption for large datasets
+   - Limited by GPU memory when available
+   - Cache size grows with dataset
+
+2. **Performance**
+
+   - Initial extraction can be slow
+   - Cache validation overhead
+   - Disk I/O bottlenecks possible
+
+3. **Dataset Support**
+   - Primarily optimized for GTSRB
+   - Limited support for other datasets
+   - Fixed input size requirements

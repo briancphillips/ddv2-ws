@@ -1,102 +1,95 @@
 # DynaDetect v2
 
-A dynamic detection system for analyzing and evaluating machine learning models with a focus on robustness and security evaluation.
+A machine learning evaluation framework focused on model robustness and security assessment, with particular emphasis on adversarial attack detection and mitigation.
 
-## Overview
+## Core Features
 
-DynaDetect v2 is a comprehensive framework for:
+- **Model Support**:
 
-- Training and evaluating machine learning models
-- Analyzing model behavior under various conditions
-- Performing robustness assessments
-- Visualizing and interpreting results
+  - DDKNN (Dynamic Distance-based k-Nearest Neighbors)
+  - GPU-accelerated LogisticRegression
+  - GPU-accelerated SVM
+  - RandomForest with early stopping
+  - Decision Trees
+  - K-Nearest Neighbors
 
-## Key Components
+- **Evaluation Capabilities**:
 
-1. **Core Framework** (`dynadetectv2/core/`)
+  - Label flipping attack assessment
+  - Model performance metrics (accuracy, precision, recall, F1)
+  - Per-class performance analysis
+  - Latency measurements
+  - Resource utilization tracking
 
-   - Model implementations (Traditional ML and Neural)
-   - Dataset handling and preprocessing
-   - Training orchestration
+- **Dataset Handling**:
+  - Built-in GTSRB dataset support
+  - Feature extraction caching
+  - Data poisoning capabilities
+  - Efficient batch processing
 
-2. **Evaluation Framework** (`dynadetectv2/evaluation/`)
+## Quick Start
 
-   - Comprehensive model evaluation
-   - Metrics calculation and logging
-   - Performance analysis
-
-3. **Visualization Tools** (`experiments/visualization/`)
-   - Web-based result visualization
-   - Performance metrics plotting
-   - Interactive analysis dashboard
-
-## Supported Models
-
-- DDKNN (with gradient-based capabilities)
-- Logistic Regression
-- Support Vector Machines
-- Random Forest
-- Decision Trees
-- K-Nearest Neighbors
-
-## Getting Started
-
-1. **Installation**
+1. **Environment Setup**:
 
 ```bash
+# Create and activate conda environment
+conda create -n jupyterlab python=3.8
+conda activate jupyterlab
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-2. **Running Evaluations**
+2. **Run Evaluation**:
 
 ```bash
-python -m dynadetectv2.main --config path/to/config.json
-```
+# Full evaluation
+python experiments/run_full_evaluation.py
 
-3. **Viewing Results**
-
-```bash
-cd experiments/visualization/web
-python app.py
+# Test mode (reduced configurations)
+python experiments/run_full_evaluation.py --test
 ```
 
 ## Project Structure
 
 ```
 dynadetectv2/
-├── core/           # Core ML components
+├── core/           # Core ML implementations
+│   ├── models.py   # Model implementations
+│   ├── dataset.py  # Dataset handling
+│   └── trainer.py  # Training orchestration
 ├── evaluation/     # Evaluation framework
+│   ├── evaluator.py # Evaluation logic
+│   └── runner.py   # Experiment execution
 ├── config/        # Configuration management
 └── attacks/       # Attack implementations
 
 experiments/
-├── visualization/  # Result visualization
-└── utils/         # Utility functions
+├── run_full_evaluation.py  # Main evaluation script
+├── visualization/          # Result visualization
+└── results_management/     # Results handling
 ```
-
-## Configuration
-
-The system uses a configuration-driven approach. Key configuration components:
-
-- Dataset configurations
-- Model parameters
-- Evaluation settings
-- Visualization preferences
-
-See `dynadetectv2/config/__init__.py` for configuration options.
 
 ## Results and Logging
 
-- Results are stored in `results/` directory
-- Logs are maintained in `logs/` directory
-- Evaluation outputs include metrics, timing, and resource usage
+- Results are stored in CSV format in the `results/` directory
+- Logs are maintained in the `logs/` directory with automatic archiving
+- Each run creates timestamped files for both results and logs
 
-## Contributing
+## Configuration
 
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
+The system uses a configuration-driven approach through `ConfigurationManager`:
 
-## License
+- Dataset configurations (GTSRB supported)
+- Model parameters
+- Evaluation modes (standard, dynadetect)
+- Attack parameters (label flipping types, poison rates)
 
-[Insert License Information]
+## Development Status
+
+This is an active research project. The current implementation focuses on:
+
+- Model robustness evaluation
+- Label flipping attack assessment
+- Performance optimization for large-scale evaluations
+- Resource utilization monitoring

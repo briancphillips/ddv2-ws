@@ -1,131 +1,163 @@
 # Technical Documentation
 
-## Model Architecture
+## Core Components
 
-### Base Models
+### Model Implementations (`core/models.py`)
 
-The system implements several model architectures in `dynadetectv2/core/models.py`:
+1. **DDKNN (Dynamic Distance-based k-Nearest Neighbors)**
 
-1. **DDKNN**
+   - PyTorch implementation with gradient computation support
+   - Soft voting mechanism with temperature parameter
+   - Distance-weighted predictions
+   - GPU acceleration support
 
-   - DynaDetect KNN implementation with gradient-based capabilities
-   - Supports gradient-based operations
-   - Configurable temperature parameter for soft voting
+2. **LogisticRegressionWrapper**
 
-2. **Neural Implementations**
+   - GPU-accelerated implementation
+   - Early stopping support
+   - Batch processing
+   - Configurable learning rate and regularization
+   - Memory-efficient training
 
-   - Logistic Regression with PyTorch backend
-   - SVM with custom hinge loss
-   - Decision Tree Module with differentiable splits
-   - Random Forest with parallel tree processing
+3. **SVMWrapper**
 
-3. **Traditional ML Wrappers**
-   - KNeighbors wrapper with batch processing
-   - Decision Tree wrapper with sklearn backend
-   - Base model interface for consistency
+   - GPU-accelerated implementation
+   - Hinge loss optimization
+   - Batch processing support
+   - Early stopping capability
 
-## Evaluation Framework
+4. **RandomForestWrapper**
+   - PyTorch implementation
+   - Parallel tree training
+   - Early stopping support
+   - Batch prediction capability
 
-### Components
+### Dataset Handling (`core/dataset.py`)
 
-1. **Model Evaluator** (`evaluation/evaluator.py`)
+1. **Feature Extraction**
 
-   - Handles model training and evaluation
-   - Implements timeout mechanisms
-   - Manages resource monitoring
-   - Handles result logging and metrics
+   - WideResNet-based feature extractor
+   - Caching mechanism for extracted features
+   - Support for GTSRB dataset
+   - Automatic data preprocessing
 
-2. **Dataset Handler** (`core/dataset.py`)
+2. **Data Poisoning**
+   - Label flipping attack implementation
+   - Multiple flipping strategies:
+     - Random-to-random
+     - Targeted flipping
+     - Source-target specific
+   - Configurable poison rates
 
-   - Manages data loading and preprocessing
-   - Implements data transformations
-   - Handles batch processing
-   - Supports various data formats
+### Evaluation Framework (`evaluation/evaluator.py`)
 
-3. **Training Orchestration** (`core/trainer.py`)
-   - Manages training loops
-   - Handles validation splits
-   - Implements early stopping
-   - Manages learning rate scheduling
+1. **ModelEvaluator**
 
-## Performance Optimization
+   - Comprehensive metrics calculation
+   - Performance monitoring
+   - Resource usage tracking
+   - Timeout handling
+   - Results logging
 
-### Memory Management
+2. **DatasetEvaluator**
+   - Dataset-specific evaluation logic
+   - Attack impact assessment
+   - Cross-validation support
+   - Batch processing
 
-- Batch processing for large datasets
-- Efficient tensor operations
-- Memory-mapped file handling
-- Resource monitoring and cleanup
+## Implementation Details
 
-### Computation Efficiency
+### Training Process
 
-- Parallel processing where applicable
-- GPU acceleration when available
-- Optimized distance computations
-- Efficient matrix operations
+1. **Feature Extraction**
+
+   ```python
+   # Initialize feature extractor
+   extractor = FeatureExtractor(dataset_name)
+
+   # Extract and cache features
+   features = extractor(data)
+   ```
+
+2. **Model Training**
+
+   ```python
+   # Initialize model with GPU support
+   model = ModelFactory.create_model(classifier_name)
+
+   # Train with early stopping
+   model.fit(features, labels,
+            early_stopping=True,
+            validation_fraction=0.1)
+   ```
+
+3. **Evaluation**
+
+   ```python
+   # Initialize evaluator
+   evaluator = ModelEvaluator(classifier_name, mode='standard')
+
+   # Run evaluation with timeout
+   with time_limit(timeout):
+       predictions = model.predict(test_features)
+       metrics = evaluator.compute_metrics(predictions, true_labels)
+   ```
+
+### Attack Implementation
+
+1. **Label Flipping**
+   ```python
+   def label_flipping(labels, mode, poison_rate=0.0):
+       if mode == 'random_to_random':
+           # Randomly flip labels
+           flip_indices = np.random.choice(...)
+       elif mode == 'targeted':
+           # Target specific classes
+           flip_indices = np.where(...)
+       return modified_labels
+   ```
+
+### Resource Management
+
+1. **Memory Optimization**
+
+   - Batch processing for large datasets
+   - Feature caching with size limits
+   - GPU memory management
+   - Automatic cleanup
+
+2. **Performance Monitoring**
+   - CPU/GPU utilization tracking
+   - Memory usage monitoring
+   - Training/inference latency measurement
+   - Resource limit enforcement
 
 ## Configuration System
 
-### Structure
+1. **ExperimentConfig**
 
-Configuration is managed through `dynadetectv2/config/__init__.py`:
-
-1. **Dataset Configuration**
-
-   - Dataset paths and formats
-   - Preprocessing parameters
-   - Validation splits
-   - Batch sizes
-
-2. **Model Configuration**
-
+   - Dataset parameters
    - Model hyperparameters
-   - Training parameters
-   - Optimization settings
-   - Architecture choices
+   - Evaluation settings
+   - Attack configurations
 
-3. **Evaluation Configuration**
-   - Evaluation modes
-   - Metric selections
-   - Resource limits
-   - Logging preferences
+2. **Logging System**
+   - Timestamped logs
+   - Automatic archiving
+   - Performance metrics
+   - Error tracking
 
-## Visualization System
+## Results Management
 
-### Components
+1. **Data Format**
 
-1. **Web Interface**
+   - CSV output with comprehensive metrics
+   - Per-class performance measures
+   - Attack impact statistics
+   - Resource utilization data
 
-   - Interactive dashboard
-   - Real-time metric updates
-   - Result comparison tools
-   - Export capabilities
-
-2. **Plot Utilities**
-   - Performance metric plots
-   - Resource usage visualization
-   - Model comparison charts
-   - Dataset statistics
-
-## Development Guidelines
-
-### Code Structure
-
-- Follow PEP 8 style guide
-- Use type hints
-- Document all public interfaces
-- Include unit tests for new features
-
-### Performance Considerations
-
-- Profile memory usage
-- Monitor computation time
-- Optimize bottlenecks
-- Handle large datasets efficiently
-
-### Testing
-
-- Unit tests for core components
-- Integration tests for workflows
-- Performance benchmarks
-- Resource usage tests
+2. **Visualization**
+   - Performance plots
+   - Attack impact visualization
+   - Resource utilization graphs
+   - Comparative analysis tools
