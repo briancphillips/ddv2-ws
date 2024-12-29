@@ -20,14 +20,28 @@ from PIL import Image
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class FeatureExtractor(nn.Module):
-    """Feature extractor using pretrained ResNet."""
+    """Feature extractor using pretrained models."""
     
-    def __init__(self):
+    def __init__(self, dataset_name):
+        """Initialize feature extractor."""
         super().__init__()
-        # Load pretrained ResNet
-        self.model = models.resnet18(pretrained=True)
-        # Remove the final fully connected layer
-        self.model = nn.Sequential(*list(self.model.children())[:-1])
+        self.dataset_name = dataset_name
+        
+        if dataset_name == 'CIFAR100':
+            # Use WRN-40-4 for CIFAR100
+            self.model = WideResNet(depth=40, num_classes=100, widen_factor=4, dropRate=0.3)
+            self.load_pretrained_wrn()
+        elif dataset_name == 'GTSRB':
+            # Use WRN-16-8 for GTSRB (smaller network, wider layers)
+            self.model = WideResNet(depth=16, num_classes=43, widen_factor=8, dropRate=0.3)
+            # Remove the final classification layer
+            self.model = nn.Sequential(*list(self.model.children())[:-1])
+        else:
+            # Use ResNet18 for other datasets
+            self.model = models.resnet18(pretrained=True)
+            # Remove the final classification layer
+            self.model = nn.Sequential(*list(self.model.children())[:-1])
+        
         self.model = self.model.to(device)
         self.model.eval()
         
@@ -148,7 +162,7 @@ class DatasetHandler:
         self.transform = self.get_transform()
         self._feature_cache = {}  # Cache for extracted features
         self._label_flip_cache = {}  # Cache for flipped labels
-        self.feature_extractor = FeatureExtractor()  # Initialize feature extractor
+        self.feature_extractor = FeatureExtractor(self.dataset_name)  # Initialize feature extractor
         logging.info(f"Initialized DatasetHandler for {self.dataset_name}")
         logging.info(f"Dataset type: {self.get_dataset_type()}")
         logging.info(f"Sample size: {self.sample_size}")
@@ -179,23 +193,45 @@ class DatasetHandler:
             
         if "ImageNette" in self.dataset_name:
             return transforms.Compose([
-                transforms.Resize(256),  # Resize shorter side to 256
-                transforms.CenterCrop(224),  # Center crop to 224x224
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
             ])
         elif "CIFAR" in self.dataset_name:
-            return transforms.Compose([
-                transforms.Resize(224),  # Resize to match ResNet input
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-            ])
+            if self.is_train:  # Training transforms with augmentation
+                return transforms.Compose([
+                    transforms.RandomCrop(32, padding=4),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                      (0.2023, 0.1994, 0.2010))
+                ])
+            else:  # Validation/test transforms
+                return transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                      (0.2023, 0.1994, 0.2010))
+                ])
         elif "GTSRB" in self.dataset_name:
-            return transforms.Compose([
-                transforms.Resize((32, 32)),  # Force exact 32x32 resize
-                transforms.ToTensor(),
-                transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
-            ])
+            if self.is_train:  # Training transforms with augmentation
+                return transforms.Compose([
+                    transforms.Resize((32, 32)),
+                    transforms.RandomRotation(15),
+                    transforms.RandomAffine(0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+                    transforms.ColorJitter(brightness=0.2, contrast=0.2),
+                    transforms.RandomPerspective(distortion_scale=0.2, p=0.5),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.3337, 0.3064, 0.3171),
+                                      (0.2672, 0.2564, 0.2629))
+                ])
+            else:  # Validation/test transforms
+                return transforms.Compose([
+                    transforms.Resize((32, 32)),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.3337, 0.3064, 0.3171),
+                                      (0.2672, 0.2564, 0.2629))
+                ])
         else:
             raise ValueError(f"Unsupported dataset: {self.dataset_name}")
     
