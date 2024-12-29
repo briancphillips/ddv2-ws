@@ -1,0 +1,44 @@
+nohup: ignoring input
+2024-12-29 12:19:59,082 - INFO - Logging setup completed successfully
+2024-12-29 12:19:59,082 - INFO - Log file created at: /home/brian/Notebooks/ddv2-ws/logs/experiment_20241229_121958.log
+2024-12-29 12:19:59,083 - INFO - Starting experiment run
+2024-12-29 12:19:59,083 - INFO - Test mode: False
+2024-12-29 12:19:59,083 - INFO - 
+Processing dataset: GTSRB
+Traceback (most recent call last):
+  File "/home/brian/Notebooks/ddv2-ws/experiments/run_full_evaluation.py", line 198, in main
+    runner.run(timestamp=timestamp)  # Pass the timestamp to the runner
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/brian/Notebooks/ddv2-ws/dynadetectv2/evaluation/runner.py", line 55, in run
+    dataset_handler = DatasetHandler(dataset_config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/brian/Notebooks/ddv2-ws/dynadetectv2/core/dataset.py", line 162, in __init__
+    self.transform = self.get_transform()
+                     ^^^^^^^^^^^^^^^^^^^^
+  File "/home/brian/Notebooks/ddv2-ws/dynadetectv2/core/dataset.py", line 217, in get_transform
+    if self.is_train:  # Training transforms with augmentation
+       ^^^^^^^^^^^^^
+AttributeError: 'DatasetHandler' object has no attribute 'is_train'
+
+Archiving previous files...
+Archiving results from: /home/brian/Notebooks/ddv2-ws/results
+Results archived
+Archiving logs from: /home/brian/Notebooks/ddv2-ws/logs
+Logs archived
+Cleanup completed
+Archiving finished - starting evaluation
+
+Logging to: /home/brian/Notebooks/ddv2-ws/logs/experiment_20241229_121958.log
+Initializing configuration manager...
+Getting configurations...
+
+Evaluation Plan:
+- Datasets: ['GTSRB', 'GTSRB', 'GTSRB', 'GTSRB', 'ImageNette', 'ImageNette', 'ImageNette', 'ImageNette', 'CIFAR100', 'CIFAR100', 'CIFAR100', 'CIFAR100']
+- Classifiers: ['SVM', 'LogisticRegression', 'RandomForest', 'KNeighbors']
+- Sample sizes: Full
+- Modes: ['standard', 'dynadetect']
+- Iterations: 1
+
+Starting evaluation...
+
+Error during execution: 'DatasetHandler' object has no attribute 'is_train'

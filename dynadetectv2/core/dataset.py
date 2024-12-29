@@ -159,6 +159,7 @@ class DatasetHandler:
         self.dataset_name = dataset_config.name
         self.sample_size = dataset_config.sample_size
         self.root_dir = '/home/brian/Notebooks/ddv2-ws'
+        self.is_train = True  # Flag for train/val transforms
         self.transform = self.get_transform()
         self._feature_cache = {}  # Cache for extracted features
         self._label_flip_cache = {}  # Cache for flipped labels
@@ -260,10 +261,14 @@ class DatasetHandler:
 
     def get_train_dataset(self):
         """Get training dataset."""
+        self.is_train = True  # Set to True for training transforms
+        self.transform = self.get_transform()  # Update transform
         return self._get_dataset('train', self.sample_size)
         
     def get_val_dataset(self):
         """Get validation dataset."""
+        self.is_train = False  # Set to False for validation transforms
+        self.transform = self.get_transform()  # Update transform
         if self.dataset_name == 'GTSRB':
             # For GTSRB, use 20% of train size or minimum 1000 samples
             val_size = max(self.sample_size // 5, 1000)
