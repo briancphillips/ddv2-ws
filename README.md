@@ -1,100 +1,102 @@
 # DynaDetect v2
 
-A robust framework for detecting and mitigating data poisoning attacks in machine learning models.
+A dynamic detection system for analyzing and evaluating machine learning models with a focus on robustness and security evaluation.
 
-## Project Structure
+## Overview
 
-```
-dynadetectv2/
-├── attacks/            # Attack implementations (label flipping, etc.)
-├── config/            # Configuration management
-├── core/             # Core functionality
-│   ├── dataset.py    # Dataset handling and transformations
-│   ├── models.py     # Model implementations
-│   └── trainer.py    # Training implementations
-├── evaluation/       # Evaluation metrics and tools
-└── main.py          # Main entry point
+DynaDetect v2 is a comprehensive framework for:
 
-experiments/
-├── results_management/  # Results processing and analysis
-├── utils/              # Utility functions
-└── run_full_evaluation.py  # Full evaluation script
+- Training and evaluating machine learning models
+- Analyzing model behavior under various conditions
+- Performing robustness assessments
+- Visualizing and interpreting results
 
-tests/                  # Test suite
-.datasets/              # Dataset storage
-logs/                   # Experiment logs
-results/                # Experiment results
-```
+## Key Components
 
-## Features
+1. **Core Framework** (`dynadetectv2/core/`)
 
-- Multiple attack types support:
+   - Model implementations (Traditional ML and Neural)
+   - Dataset handling and preprocessing
+   - Training orchestration
 
-  - Label flipping (random-to-random, random-to-target, source-to-target)
-  - Future: PGD and other attack implementations
+2. **Evaluation Framework** (`dynadetectv2/evaluation/`)
 
-- Multiple dataset support:
+   - Comprehensive model evaluation
+   - Metrics calculation and logging
+   - Performance analysis
 
-  - GTSRB (German Traffic Sign Recognition Benchmark)
-  - CIFAR-100
-  - ImageNette
-  - Support for numerical datasets
+3. **Visualization Tools** (`experiments/visualization/`)
+   - Web-based result visualization
+   - Performance metrics plotting
+   - Interactive analysis dashboard
 
-- Multiple classifier support:
+## Supported Models
 
-  - SVM
-  - Logistic Regression
-  - Random Forest
-  - K-Nearest Neighbors
+- DDKNN (with gradient-based capabilities)
+- Logistic Regression
+- Support Vector Machines
+- Random Forest
+- Decision Trees
+- K-Nearest Neighbors
 
-- Evaluation modes:
-  - Standard (baseline)
-  - DynaDetect (with dynamic detection)
+## Getting Started
 
-## Installation
-
-1. Clone the repository:
-
-```bash
-git clone [repository-url]
-```
-
-2. Install dependencies:
+1. **Installation**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
-
-### Running Evaluations
-
-For test mode (reduced dataset size):
+2. **Running Evaluations**
 
 ```bash
-python experiments/run_full_evaluation.py --test
+python -m dynadetectv2.main --config path/to/config.json
 ```
 
-For full evaluation:
+3. **Viewing Results**
 
 ```bash
-python experiments/run_full_evaluation.py
+cd experiments/visualization/web
+python app.py
 ```
 
-### Configuration
+## Project Structure
 
-- Dataset configurations in `dynadetectv2/config/__init__.py`
-- Attack parameters and poison rates can be modified in the config
-- Experiment parameters (iterations, modes, etc.) are configurable
+```
+dynadetectv2/
+├── core/           # Core ML components
+├── evaluation/     # Evaluation framework
+├── config/        # Configuration management
+└── attacks/       # Attack implementations
 
-## Results
+experiments/
+├── visualization/  # Result visualization
+└── utils/         # Utility functions
+```
 
-Results are stored in:
+## Configuration
 
-- CSV format in `results/` directory
-- Logs in `logs/` directory
+The system uses a configuration-driven approach. Key configuration components:
 
-## Development Status
+- Dataset configurations
+- Model parameters
+- Evaluation settings
+- Visualization preferences
 
-See `TODO.md` for current development status and planned features.
-See `REFACTORING.md` for ongoing refactoring tasks.
+See `dynadetectv2/config/__init__.py` for configuration options.
+
+## Results and Logging
+
+- Results are stored in `results/` directory
+- Logs are maintained in `logs/` directory
+- Evaluation outputs include metrics, timing, and resource usage
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+## License
+
+[Insert License Information]

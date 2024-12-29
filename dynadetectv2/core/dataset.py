@@ -192,7 +192,7 @@ class DatasetHandler:
             ])
         elif "GTSRB" in self.dataset_name:
             return transforms.Compose([
-                transforms.Resize(224),  # Resize to match ResNet input
+                transforms.Resize((32, 32)),  # Force exact 32x32 resize
                 transforms.ToTensor(),
                 transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
             ])

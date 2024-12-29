@@ -36,11 +36,11 @@ class BaseModel:
         raise NotImplementedError
 
 
-class SoftKNN(nn.Module):
-    """Soft KNN classifier that can be used with gradient-based attacks."""
+class DDKNN(nn.Module):
+    """DynaDetect KNN classifier that can be used with gradient-based attacks."""
 
     def __init__(self, n_neighbors: int = 5, temperature: float = 1.0):
-        """Initialize the Soft KNN classifier.
+        """Initialize the DDKNN classifier.
 
         Args:
             n_neighbors: Number of neighbors to use
@@ -82,7 +82,7 @@ class SoftKNN(nn.Module):
         return torch.clamp(dist, min=0.0).sqrt()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute soft KNN predictions.
+        """Compute DDKNN predictions.
 
         Args:
             x: Input features

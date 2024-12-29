@@ -1,122 +1,108 @@
-# DynaDetect v2 Development Status
+# Development Tasks and Roadmap
 
-## Completed Tasks
+## Current Status
 
-### Core Implementation
+### Completed ✓
 
-- [x] Basic project structure and organization
-- [x] Dataset handling implementation
-  - [x] GTSRB dataset support
-  - [x] CIFAR-100 dataset support
-  - [x] ImageNette dataset support
-  - [x] Feature extraction and caching
-  - [x] Dataset splitting (train/val)
-- [x] Model implementations
-  - [x] SVM
-  - [x] Logistic Regression
-  - [x] Random Forest
-  - [x] K-Nearest Neighbors
-- [x] Training implementations
-  - [x] Standard training mode
-  - [x] DynaDetect training mode
-  - [x] Sample weighting support
-  - [x] Early stopping
-- [x] Optimize evaluation pipeline
-- [x] Fix poison rate calculations
-- [x] Add clean baseline (0.0) to poison rates
-- [x] Implement proper dataset size handling
-- [x] Optimize RandomForest implementation for better performance
-- [x] Fix results file naming for test mode
-- [x] Streamline evaluation process with single iteration
+- Base model implementations (DDKNN, LogisticRegression, SVM, RandomForest)
+- Core evaluation framework
+- Basic visualization system
+- Configuration management
+- Resource monitoring and logging
+- Batch processing support
+- GPU acceleration support
 
-### Attack Implementation
+## In Progress 🔄
 
-- [x] Label flipping attacks
-  - [x] Random-to-random flipping
-  - [x] Random-to-target flipping
-  - [x] Source-to-target flipping
-  - [x] Edge case handling for source class preservation
+### Core Framework
+
+- [ ] Optimize memory usage in large-scale evaluations
+- [ ] Improve parallel processing capabilities
+- [ ] Enhance GPU utilization for neural implementations
+- [ ] Add more sophisticated early stopping mechanisms
+
+### Model Implementations
+
+- [ ] Add ensemble method improvements
+- [ ] Implement additional neural architectures
+- [ ] Optimize distance computation in KNN
+- [ ] Add support for custom loss functions
 
 ### Evaluation Framework
 
-- [x] Basic metrics implementation
-- [x] Results logging and storage
-- [x] Experiment configuration management
-- [x] Full evaluation pipeline
-- [x] Test mode for quick validation
-- [x] Fixed dataset sizes to use full training sets instead of test samples
-  - [x] CIFAR100: 50,000 samples
-  - [x] GTSRB: 39,209 samples
-  - [x] ImageNette: 9,469 samples
-- [x] Verified dataset order in evaluation
-  - [x] Ran with CIFAR100 first
-  - [x] Changed to run with ImageNette first
+- [ ] Implement cross-validation support
+- [ ] Add more sophisticated metrics
+- [ ] Improve timeout handling
+- [ ] Add support for distributed evaluation
 
-### Analysis Tools
+### Visualization
 
-- [x] Visualization dashboard
-  - [x] Interactive Streamlit web interface
-  - [x] Dynamic filtering by dataset and classifier
-  - [x] Multiple plot types (Line, Bar, Box, Scatter)
-  - [x] Comparison of standard vs adversarial modes
-  - [x] Proper poison rate handling and display
-  - [x] Summary statistics and raw data views
-- [x] Advanced metrics implementation
-  - [x] ROC curves
-  - [x] Confusion matrices
-  - [x] Per-class analysis
-- [x] Performance profiling
-  - [x] Model training times
-  - [x] GPU utilization monitoring
+- [ ] Enhance web dashboard features
+- [ ] Add more interactive plotting options
+- [ ] Implement real-time monitoring
+- [ ] Add export functionality for reports
 
-## Current Tasks
+## Future Plans 🎯
 
-### Performance Optimization
+### Short Term
 
-- [ ] Optimize memory usage during evaluation
-- [ ] Fine-tune batch sizes for optimal performance
+1. Performance Optimization
 
-### Analysis & Validation
+   - [ ] Profile and optimize bottlenecks
+   - [ ] Implement memory-efficient data loading
+   - [ ] Optimize matrix operations
 
-- [x] Analyze performance patterns across poison rates
-- [x] Compare classifier resilience to poisoning
-- [ ] Validate early stopping effectiveness
-- [ ] Document performance benchmarks
+2. Feature Additions
 
-### Documentation
+   - [ ] Add support for new datasets
+   - [ ] Implement additional model architectures
+   - [ ] Enhance logging capabilities
 
-- [ ] Update README with latest findings
-- [ ] Document performance characteristics
-- [x] Add usage examples for different scenarios
-- [ ] Create troubleshooting guide
+3. Testing
+   - [ ] Expand unit test coverage
+   - [ ] Add integration tests
+   - [ ] Implement performance benchmarks
 
-## Future Tasks
+### Long Term
 
-### Core Features
+1. Architecture
 
-- [ ] Support for additional datasets
-  - [ ] MNIST
-  - [ ] CIFAR-10
-  - [ ] Custom dataset interface
-- [ ] Additional model architectures
-  - [ ] Neural Networks
-  - [ ] Decision Trees
-  - [ ] Ensemble methods
+   - [ ] Microservices architecture for scalability
+   - [ ] API-first design for components
+   - [ ] Plugin system for extensions
 
-### Analysis Tools
+2. Features
 
-- [ ] Real-time monitoring tools
-- [ ] Automated result analysis
+   - [ ] Advanced visualization capabilities
+   - [ ] Automated hyperparameter optimization
+   - [ ] Model interpretability tools
 
-### Infrastructure
+3. Integration
+   - [ ] Cloud deployment support
+   - [ ] CI/CD pipeline improvements
+   - [ ] Container orchestration
 
-- [ ] CI/CD pipeline
-- [ ] Automated testing
-- [ ] Code quality checks
+## Known Issues 🐛
 
-### Research
+1. Memory Management
 
-- [ ] New attack detection methods
-- [ ] Adaptive defense mechanisms
-- [ ] Transfer learning analysis
-- [ ] Model robustness metrics
+   - [ ] Large dataset handling improvements needed
+   - [ ] Memory leaks in long-running evaluations
+
+2. Performance
+
+   - [ ] Slow distance computation in KNN
+   - [ ] Inefficient batch processing in some cases
+
+3. Usability
+   - [ ] Improve error messages
+   - [ ] Better documentation needed
+   - [ ] Configuration validation improvements
+
+## Documentation Tasks 📚
+
+- [ ] API documentation updates
+- [ ] Usage examples and tutorials
+- [ ] Performance optimization guide
+- [ ] Development setup guide
+- [ ] Contributing guidelines
