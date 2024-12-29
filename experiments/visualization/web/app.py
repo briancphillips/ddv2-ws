@@ -8,6 +8,9 @@ import os
 import gc
 import io
 import plotly.io as pio
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -89,7 +92,7 @@ def validate_metric_selection(df: pd.DataFrame, metric: str, modification_method
             return False
     return True
 
-def prepare_data(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = None):
+def prepare_data(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = None, secondary_group: str = None):
     """Prepare data for plotting by handling grouping and aggregation."""
     df = df.copy()
     
@@ -107,22 +110,72 @@ def prepare_data(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = 
         if y == 'num_poisoned':
             y = 'poison_rate'
     
-    # Determine grouping based on plot type and color
-    group_cols = ['poison_rate']
-    if color:
-        group_cols.append(color)
-    if 'dataset' in df.columns:  # Always include dataset in grouping
-        group_cols.append('dataset')
+    # Add data quality checks
+    total_combinations = len(df['poison_rate'].unique()) * len(df['mode'].unique())
+    if secondary_group:
+        total_combinations *= len(df[secondary_group].unique())
+    actual_combinations = len(df.groupby(['poison_rate', 'mode', secondary_group if secondary_group else 'dataset']))
     
-    # Group and aggregate
-    df = df.groupby(group_cols)[y].mean().reset_index()
+    if actual_combinations < total_combinations:
+        st.warning(f"⚠️ Some data combinations are missing. This might cause unexpected patterns in the visualization.")
+    
+    # Check for potential outliers or anomalies
+    metric_mean = df[y].mean()
+    metric_std = df[y].std()
+    outliers = df[abs(df[y] - metric_mean) > 3 * metric_std]
+    if not outliers.empty:
+        st.warning(f"⚠️ Detected potential outliers in {y}. This might cause sudden spikes or drops.")
+    
+    # For combined plots, we need to handle each dataset separately first
+    datasets = df['dataset'].unique()
+    processed_dfs = []
+    
+    for dataset in datasets:
+        dataset_df = df[df['dataset'] == dataset]
+        
+        # Determine grouping based on plot type and color
+        group_cols = ['poison_rate']
+        if color:
+            group_cols.append(color)
+        if secondary_group and secondary_group in dataset_df.columns:
+            group_cols.append(secondary_group)
+        
+        # Group and aggregate with additional statistics
+        agg_dict = {
+            y: ['mean', 'std', 'count']
+        }
+        
+        df_grouped = dataset_df.groupby(group_cols).agg(agg_dict).reset_index()
+        df_grouped.columns = [col[0] if col[1] == '' else f"{col[0]}_{col[1]}" for col in df_grouped.columns]
+        
+        # Add confidence information
+        df_grouped[f'{y}_ci'] = 1.96 * df_grouped[f'{y}_std'] / np.sqrt(df_grouped[f'{y}_count'])
+        
+        # Add dataset column back
+        df_grouped['dataset'] = dataset
+        
+        processed_dfs.append(df_grouped)
+    
+    # Combine all processed dataframes
+    df_grouped = pd.concat(processed_dfs, ignore_index=True)
+    
+    # Flag low sample sizes
+    low_sample_mask = df_grouped[f'{y}_count'] < df_grouped[f'{y}_count'].median() / 2
+    if low_sample_mask.any():
+        st.warning(f"⚠️ Some points have significantly fewer samples, which might affect reliability.")
     
     # Sort to ensure proper line connection
-    df = df.sort_values(['dataset', 'poison_rate'] if 'dataset' in df.columns else 'poison_rate')
+    sort_cols = ['dataset', 'poison_rate']
+    if secondary_group and secondary_group in df_grouped.columns:
+        sort_cols.insert(0, secondary_group)
+    df_grouped = df_grouped.sort_values(sort_cols)
     
-    return df, x, y
+    # Rename mean column back to original metric name for plotting
+    df_grouped[y] = df_grouped[f'{y}_mean']
+    
+    return df_grouped, x, y
 
-def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = None, color_scheme: str = "default"):
+def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = None, color_scheme: str = "default", secondary_group: str = "classifier"):
     """Create a plot based on the specified type and parameters."""
     try:
         if df.empty:
@@ -130,48 +183,51 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
             return None
         
         # Prepare data for plotting
-        df, x, y = prepare_data(df, plot_type, x, y, color)
+        df, x, y = prepare_data(df, plot_type, x, y, color, secondary_group)
         
-        # Set color scheme
-        color_sequence = None
-        template = "plotly"  # Default template
+        # Define consistent color scheme for modes
+        mode_colors = {'standard': 'rgb(31, 119, 180)', 'dynadetect': 'rgb(255, 127, 14)'}
         
-        if color_scheme != "default":
-            if color_scheme == "viridis":
-                color_sequence = px.colors.sequential.Viridis
-            elif color_scheme == "plasma":
-                color_sequence = px.colors.sequential.Plasma
-            elif color_scheme == "inferno":
-                color_sequence = px.colors.sequential.Inferno
-            elif color_scheme == "magma":
-                color_sequence = px.colors.sequential.Magma
-            elif color_scheme == "colorblind":
-                color_sequence = px.colors.qualitative.Plotly
-            elif color_scheme == "dark":
-                color_sequence = px.colors.qualitative.Dark24
-                template = "plotly_dark"
-        
-        # Create plot based on type with template
-        plot_kwargs = {
-            "color_discrete_sequence": color_sequence,
-            "template": template,
-            "category_orders": {"mode": ["standard", "dynadetect"]}  # Fix mode order
-        } if color_sequence else {"template": template, "category_orders": {"mode": ["standard", "dynadetect"]}}
-        
+        # Create base plot
         if plot_type == "Line":
-            fig = px.line(df, x=x, y=y, color=color, line_shape='linear', **plot_kwargs)
+            fig = px.line(
+                df, x=x, y=y,
+                color='mode',
+                line_dash='dataset',
+                facet_col=secondary_group,
+                facet_col_wrap=min(3, df[secondary_group].nunique()),
+                height=400,
+                category_orders={"mode": ["standard", "dynadetect"]},
+                color_discrete_map=mode_colors
+            )
             fig.update_traces(mode='lines+markers')
         elif plot_type == "Bar":
-            fig = px.bar(df, x=x, y=y, color=color, barmode='group', **plot_kwargs)
-        elif plot_type == "Box":
-            fig = px.box(df, x=x, y=y, color=color, **plot_kwargs)
-        else:  # Scatter
-            fig = px.scatter(df, x=x, y=y, color=color, **plot_kwargs)
+            fig = px.bar(
+                df, x=x, y=y,
+                color='mode',
+                pattern_shape='dataset',
+                barmode='group',
+                facet_col=secondary_group,
+                facet_col_wrap=min(3, df[secondary_group].nunique()),
+                height=400,
+                category_orders={"mode": ["standard", "dynadetect"]},
+                color_discrete_map=mode_colors
+            )
+        else:
+            fig = px.scatter(
+                df, x=x, y=y,
+                color='mode',
+                symbol='dataset',
+                facet_col=secondary_group,
+                facet_col_wrap=min(3, df[secondary_group].nunique()),
+                height=400,
+                category_orders={"mode": ["standard", "dynadetect"]},
+                color_discrete_map=mode_colors
+            )
         
         # Update axis ranges based on data and metric type
         if y in ['accuracy', 'precision', 'recall', 'f1']:
-            y_range = [0, 1]
-            fig.update_layout(yaxis_range=y_range)
+            fig.update_layout(yaxis_range=[0, 1])
         
         # Update axis labels and ticks with proper handling of clean baselines
         if x == 'poison_rate' or y == 'poison_rate':
@@ -195,7 +251,6 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 )
         
         fig.update_layout(
-            height=500,
             margin=dict(l=20, r=20, t=40, b=20),
             showlegend=True,
             legend=dict(
@@ -203,9 +258,12 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 y=0.99,
                 xanchor="right",
                 x=0.99
-            )
+            ),
+            autosize=True
         )
+        
         return fig
+        
     except Exception as e:
         st.error(f"Error creating plot: {str(e)}")
         return None
@@ -236,6 +294,167 @@ def download_plot(fig, format_type: str):
             height=1080  # Full HD height
         )
         return img_bytes
+
+def calculate_improvement(df: pd.DataFrame, metric: str):
+    """Calculate the relative improvement of dynadetect over standard mode."""
+    df = df.copy()
+    
+    # Convert num_poisoned to poison_rate if needed
+    if 'poison_rate' not in df.columns:
+        df['poison_rate'] = df.apply(
+            lambda row: calculate_poison_rate(row['num_poisoned'], row['total_images'], row['dataset']),
+            axis=1
+        )
+    
+    # First aggregate the metric values
+    agg_df = df.groupby(['dataset', 'poison_rate', 'classifier', 'mode'])[metric].mean().reset_index()
+    
+    # Then pivot the aggregated data
+    pivot_df = agg_df.pivot(
+        index=['dataset', 'poison_rate', 'classifier'],
+        columns='mode',
+        values=metric
+    ).reset_index()
+    
+    # Calculate absolute and relative improvement
+    pivot_df['absolute_improvement'] = pivot_df['dynadetect'] - pivot_df['standard']
+    # Handle division by zero in relative improvement calculation
+    pivot_df['relative_improvement'] = (pivot_df['dynadetect'] - pivot_df['standard']).where(
+        pivot_df['standard'] != 0,
+        0
+    ) / pivot_df['standard'].where(
+        pivot_df['standard'] != 0,
+        1
+    ) * 100
+    
+    # Sort by poison_rate for proper plotting
+    pivot_df = pivot_df.sort_values(['dataset', 'poison_rate'])
+    
+    return pivot_df
+
+def create_improvement_plot(df: pd.DataFrame, metric: str, plot_type: str = "Bar"):
+    """Create a plot showing the improvement of dynadetect over standard mode."""
+    improvement_df = calculate_improvement(df, metric)
+    
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    if plot_type == "Bar":
+        # Add absolute improvement bars
+        fig.add_trace(
+            go.Bar(
+                x=improvement_df['poison_rate'],
+                y=improvement_df['absolute_improvement'],
+                name='Absolute Improvement',
+                marker_color='lightblue'
+            ),
+            secondary_y=False
+        )
+        
+        # Add relative improvement line
+        fig.add_trace(
+            go.Scatter(
+                x=improvement_df['poison_rate'],
+                y=improvement_df['relative_improvement'],
+                name='Relative Improvement (%)',
+                marker_color='darkred',
+                mode='lines+markers'
+            ),
+            secondary_y=True
+        )
+    
+    # Update layout
+    fig.update_layout(
+        title=f"{metric.title()} Improvement: DynaDetect vs Standard",
+        xaxis_title="Poison Rate",
+        xaxis=dict(
+            type='category',
+            categoryorder='array',
+            categoryarray=[0, 1, 3, 5, 7, 10, 20],
+            ticktext=['Clean', '1%', '3%', '5%', '7%', '10%', '20%'],
+            tickvals=[0, 1, 3, 5, 7, 10, 20]
+        ),
+        yaxis_title=f"Absolute {metric.title()} Improvement",
+        yaxis2_title="Relative Improvement (%)",
+        showlegend=True,
+        height=400,
+        margin=dict(l=20, r=20, t=40, b=20),
+        autosize=True
+    )
+    
+    return fig
+
+def generate_insights(improvement_df: pd.DataFrame, metric: str) -> Dict[str, str]:
+    """Generate insights from the improvement data."""
+    insights = {}
+    
+    # Overall effectiveness
+    avg_abs_improvement = improvement_df['absolute_improvement'].mean()
+    avg_rel_improvement = improvement_df['relative_improvement'].mean()
+    
+    # Best and worst cases
+    best_case = improvement_df.loc[improvement_df['absolute_improvement'].idxmax()]
+    worst_case = improvement_df.loc[improvement_df['absolute_improvement'].idxmin()]
+    
+    # Poison rate analysis
+    high_poison_rates = improvement_df[improvement_df['poison_rate'] >= 10]
+    low_poison_rates = improvement_df[improvement_df['poison_rate'] < 10]
+    high_rate_avg = high_poison_rates['absolute_improvement'].mean()
+    low_rate_avg = low_poison_rates['absolute_improvement'].mean()
+    
+    # Generate summary
+    summary = f"""
+    ### Key Findings:
+    - **Overall Performance**: DynaDetect {' improves ' if avg_abs_improvement > 0 else ' decreases '} {metric} by {abs(avg_abs_improvement):.3f} ({abs(avg_rel_improvement):.1f}% relative change) on average.
+    
+    - **Best Case**: Maximum improvement of {best_case['absolute_improvement']:.3f} ({best_case['relative_improvement']:.1f}%) at {best_case['poison_rate']}% poison rate with {best_case['classifier']}.
+    
+    - **Challenging Case**: Minimum improvement of {worst_case['absolute_improvement']:.3f} ({worst_case['relative_improvement']:.1f}%) at {worst_case['poison_rate']}% poison rate with {worst_case['classifier']}.
+    
+    - **Poison Rate Impact**: DynaDetect performs {'better' if high_rate_avg > low_rate_avg else 'worse'} at higher poison rates 
+    (≥10%: {high_rate_avg:.3f} vs <10%: {low_rate_avg:.3f} average improvement).
+    
+    ### Areas for Improvement:
+    {generate_improvement_recommendations(improvement_df, metric)}
+    """
+    
+    return summary
+
+def generate_improvement_recommendations(improvement_df: pd.DataFrame, metric: str) -> str:
+    """Generate specific improvement recommendations based on the data."""
+    recommendations = []
+    
+    # Check for negative improvements
+    negative_cases = improvement_df[improvement_df['absolute_improvement'] < 0]
+    if not negative_cases.empty:
+        neg_classifiers = negative_cases['classifier'].unique()
+        neg_rates = negative_cases['poison_rate'].unique()
+        recommendations.append(
+            f"- Focus on improving performance with {', '.join(neg_classifiers)} classifier(s) "
+            f"at {', '.join(map(str, neg_rates))}% poison rates where DynaDetect underperforms standard mode."
+        )
+    
+    # Check for high variance cases
+    grouped_std = improvement_df.groupby('poison_rate')['absolute_improvement'].std()
+    high_var_rates = grouped_std[grouped_std > grouped_std.mean()].index
+    if len(high_var_rates) > 0:
+        recommendations.append(
+            f"- Work on consistency at {', '.join(map(str, high_var_rates))}% poison rates "
+            f"where performance varies significantly."
+        )
+    
+    # Check for specific classifier patterns
+    classifier_avg = improvement_df.groupby('classifier')['absolute_improvement'].mean()
+    worst_classifier = classifier_avg.idxmin()
+    recommendations.append(
+        f"- Investigate and optimize DynaDetect's interaction with {worst_classifier} "
+        f"which shows the lowest average improvement."
+    )
+    
+    if not recommendations:
+        recommendations.append("- Continue monitoring performance across different scenarios to maintain effectiveness.")
+    
+    return "\n".join(recommendations)
 
 def main():
     """Main application function."""
@@ -374,18 +593,22 @@ def main():
                 group_by = "num_poisoned"
             
             # Color By Selection - adapt based on context
-            color_options = ['classifier', 'mode']  # Set fixed important options first
+            # Always use mode as the primary color differentiator
+            color_by = 'mode'
             
-            # Add any other categorical columns that make sense
+            # Secondary grouping options
+            secondary_group_options = ['classifier']  # Start with classifier as it's most important after mode
+            
+            # Add other categorical columns that make sense
             for col in sorted(list(categorical_cols)):
-                if col not in color_options and col != group_by and df[col].nunique() <= 10:
-                    color_options.append(col)
+                if col not in ['mode', 'classifier'] and col != group_by and df[col].nunique() <= 10:
+                    secondary_group_options.append(col)
             
-            color_by = st.selectbox(
-                "Color By",
-                color_options,
-                index=color_options.index('mode'),  # Always default to mode
-                key='color_by'
+            secondary_group = st.selectbox(
+                "Secondary Grouping",
+                secondary_group_options,
+                index=0,  # Classifier is default
+                key='secondary_group'
             )
         
         # Filter data
@@ -399,84 +622,40 @@ def main():
             filtered_df = filtered_df[filtered_df['classifier'].isin(selected_classifiers)]
         
         if not filtered_df.empty:
-            if len(selected_datasets) > 1 and display_mode == "Combined Plot":
-                # Create single plot with all datasets
-                fig = create_plot(
-                    filtered_df,
-                    plot_type,
-                    x=group_by,
-                    y=metric,
-                    color=color_by,
-                    color_scheme=color_schemes[selected_color_scheme]
-                )
-                
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-                    
-                    # Add download controls for combined plot
-                    download_formats = get_plot_download_formats()
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        download_format = st.selectbox(
-                            "Download Format",
-                            options=list(download_formats.keys()),
-                            key='download_format_combined'
-                        )
-                    with col2:
-                        if st.button("Download Plot", key='download_button_combined'):
-                            format_type = download_formats[download_format]
-                            file_extension = format_type
-                            plot_data = download_plot(fig, format_type)
-                            
-                            if format_type == "html":
-                                st.download_button(
-                                    label="Click to Download",
-                                    data=plot_data,
-                                    file_name=f"plot_combined.{file_extension}",
-                                    mime="text/html",
-                                    key='download_link_combined'
-                                )
-                            else:
-                                st.download_button(
-                                    label="Click to Download",
-                                    data=plot_data,
-                                    file_name=f"plot_combined.{file_extension}",
-                                    mime=f"image/{format_type}",
-                                    key='download_link_combined'
-                                )
-            else:
-                # Create separate plots for each dataset
-                for dataset in selected_datasets:
-                    dataset_df = filtered_df[filtered_df['dataset'] == dataset]
-                    
-                    # Create plot title
-                    if len(selected_datasets) > 1:
-                        st.subheader(f"Dataset: {dataset}")
-                    
-                    # Create plot with color scheme
+            # Add view type selection
+            view_type = st.radio(
+                "View Type",
+                ["Standard View", "Improvement Analysis"],
+                key='view_type'
+            )
+            
+            if view_type == "Standard View":
+                if len(selected_datasets) > 1 and display_mode == "Combined Plot":
+                    # Create single plot with all datasets
                     fig = create_plot(
-                        dataset_df,
+                        filtered_df,
                         plot_type,
                         x=group_by,
                         y=metric,
                         color=color_by,
-                        color_scheme=color_schemes[selected_color_scheme]
+                        color_scheme=color_schemes[selected_color_scheme],
+                        secondary_group=secondary_group
                     )
                     
                     if fig:
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
-                        # Add download controls below plot
+                        # Add download controls for combined plot
                         download_formats = get_plot_download_formats()
                         col1, col2 = st.columns([2, 1])
                         with col1:
                             download_format = st.selectbox(
                                 "Download Format",
                                 options=list(download_formats.keys()),
-                                key=f'download_format_{dataset}'  # Unique key for each dataset plot
+                                key='download_format_combined'
                             )
                         with col2:
-                            if st.button("Download Plot", key=f'download_button_{dataset}'):  # Unique key for each dataset plot
+                            if st.button("Download Plot", key='download_button_combined'):
                                 format_type = download_formats[download_format]
                                 file_extension = format_type
                                 plot_data = download_plot(fig, format_type)
@@ -485,20 +664,113 @@ def main():
                                     st.download_button(
                                         label="Click to Download",
                                         data=plot_data,
-                                        file_name=f"plot_{dataset}_{metric}_{color_by}.{file_extension}",
+                                        file_name=f"plot_combined.{file_extension}",
                                         mime="text/html",
-                                        key=f'download_link_{dataset}'
+                                        key='download_link_combined'
                                     )
                                 else:
                                     st.download_button(
                                         label="Click to Download",
                                         data=plot_data,
-                                        file_name=f"plot_{dataset}_{metric}_{color_by}.{file_extension}",
+                                        file_name=f"plot_combined.{file_extension}",
                                         mime=f"image/{format_type}",
-                                        key=f'download_link_{dataset}'
+                                        key='download_link_combined'
                                     )
+                else:
+                    # Create separate plots for each dataset
+                    for dataset in selected_datasets:
+                        dataset_df = filtered_df[filtered_df['dataset'] == dataset]
+                        
+                        # Create plot title
+                        if len(selected_datasets) > 1:
+                            st.subheader(f"Dataset: {dataset}")
+                        
+                        # Create plot with color scheme
+                        fig = create_plot(
+                            dataset_df,
+                            plot_type,
+                            x=group_by,
+                            y=metric,
+                            color=color_by,
+                            color_scheme=color_schemes[selected_color_scheme],
+                            secondary_group=secondary_group
+                        )
+                        
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                            
+                            # Add download controls below plot
+                            download_formats = get_plot_download_formats()
+                            col1, col2 = st.columns([2, 1])
+                            with col1:
+                                download_format = st.selectbox(
+                                    "Download Format",
+                                    options=list(download_formats.keys()),
+                                    key=f'download_format_{dataset}'  # Unique key for each dataset plot
+                                )
+                            with col2:
+                                if st.button("Download Plot", key=f'download_button_{dataset}'):  # Unique key for each dataset plot
+                                    format_type = download_formats[download_format]
+                                    file_extension = format_type
+                                    plot_data = download_plot(fig, format_type)
+                                    
+                                    if format_type == "html":
+                                        st.download_button(
+                                            label="Click to Download",
+                                            data=plot_data,
+                                            file_name=f"plot_{dataset}_{metric}_{color_by}.{file_extension}",
+                                            mime="text/html",
+                                            key=f'download_link_{dataset}'
+                                        )
+                                    else:
+                                        st.download_button(
+                                            label="Click to Download",
+                                            data=plot_data,
+                                            file_name=f"plot_{dataset}_{metric}_{color_by}.{file_extension}",
+                                            mime=f"image/{format_type}",
+                                            key=f'download_link_{dataset}'
+                                        )
+                        
+                        # Add separator between plots if not the last dataset
+                        if dataset != selected_datasets[-1]:
+                            st.divider()
+            else:
+                # Show improvement analysis
+                st.subheader("DynaDetect Improvement Analysis")
+                
+                # Create improvement plot for each dataset
+                for dataset in selected_datasets:
+                    dataset_df = filtered_df[filtered_df['dataset'] == dataset]
                     
-                    # Add separator between plots if not the last dataset
+                    if len(selected_datasets) > 1:
+                        st.write(f"### Dataset: {dataset}")
+                    
+                    fig = create_improvement_plot(dataset_df, metric)
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                    
+                    # Add insights
+                    improvement_stats = calculate_improvement(dataset_df, metric)
+                    insights = generate_insights(improvement_stats, metric)
+                    st.markdown(insights)
+                    
+                    # Add summary statistics in expander
+                    with st.expander(f"View Detailed {dataset} Statistics"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write("Average Absolute Improvement")
+                            st.dataframe(
+                                improvement_stats.groupby('poison_rate')['absolute_improvement']
+                                .agg(['mean', 'std'])
+                                .round(4)
+                            )
+                        with col2:
+                            st.write("Average Relative Improvement (%)")
+                            st.dataframe(
+                                improvement_stats.groupby('poison_rate')['relative_improvement']
+                                .agg(['mean', 'std'])
+                                .round(2)
+                            )
+                    
                     if dataset != selected_datasets[-1]:
                         st.divider()
             
