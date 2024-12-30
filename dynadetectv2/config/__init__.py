@@ -42,6 +42,11 @@ ATTACK_METHODS = {
         'eps': 0.3,
         'alpha': 2/255,
         'iters': 40
+    },
+    'gradient_ascent': {
+        'eps': 0.3,
+        'alpha': 2/255,
+        'iters': 40
     }
 }
 
@@ -116,6 +121,21 @@ class ConfigurationManager:
                 }
             )
             all_datasets.append(dataset_config)
+
+            # Add Gradient Ascent configuration
+            dataset_config = DatasetConfig(
+                name=name,
+                dataset_type=config['type'],
+                sample_size=TEST_SAMPLE_SIZES[name],
+                attack_params={
+                    'poison_rates': POISON_RATES,
+                    'type': 'gradient_ascent',
+                    'eps': ATTACK_METHODS['gradient_ascent']['eps'],
+                    'alpha': ATTACK_METHODS['gradient_ascent']['alpha'],
+                    'iters': ATTACK_METHODS['gradient_ascent']['iters']
+                }
+            )
+            all_datasets.append(dataset_config)
         
         return ExperimentConfig(
             datasets=all_datasets,
@@ -164,6 +184,21 @@ class ConfigurationManager:
                     'eps': ATTACK_METHODS['pgd']['eps'],
                     'alpha': ATTACK_METHODS['pgd']['alpha'],
                     'iters': ATTACK_METHODS['pgd']['iters']
+                }
+            )
+            all_datasets.append(dataset_config)
+
+            # Add Gradient Ascent configuration
+            dataset_config = DatasetConfig(
+                name=name,
+                dataset_type=config['type'],
+                sample_size=DATASET_SIZES[name],  # Use full dataset sizes
+                attack_params={
+                    'poison_rates': POISON_RATES,
+                    'type': 'gradient_ascent',
+                    'eps': ATTACK_METHODS['gradient_ascent']['eps'],
+                    'alpha': ATTACK_METHODS['gradient_ascent']['alpha'],
+                    'iters': ATTACK_METHODS['gradient_ascent']['iters']
                 }
             )
             all_datasets.append(dataset_config)

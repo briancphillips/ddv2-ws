@@ -26,7 +26,7 @@ st.set_page_config(
 
 # Define dataset-specific mappings for standard rates
 rate_mappings = {
-    'GTSRB': {0: 0, 1: 197, 3: 592, 5: 987, 7: 1382, 10: 1975, 20: 3951},
+    'GTSRB': {0: 0, 1: 392, 3: 1176, 5: 1960, 7: 2744, 10: 3920, 20: 7841},
     'CIFAR100': {0: 0, 1: 500, 3: 1500, 5: 2500, 7: 3500, 10: 5000, 20: 10000},
     'ImageNette': {0: 0, 1: 94, 3: 284, 5: 473, 7: 662, 10: 946, 20: 1893}
 }
@@ -200,11 +200,12 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 line_dash='dataset',
                 facet_col=secondary_group,
                 facet_col_wrap=min(3, df[secondary_group].nunique()),
-                height=400,
+                height=700,
                 category_orders={"mode": ["standard", "dynadetect"]},
                 color_discrete_map=mode_colors
             )
             fig.update_traces(mode='lines+markers')
+
         elif plot_type == "Bar":
             fig = px.bar(
                 df, x=x, y=y,
@@ -213,10 +214,11 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 barmode='group',
                 facet_col=secondary_group,
                 facet_col_wrap=min(3, df[secondary_group].nunique()),
-                height=400,
+                height=700,
                 category_orders={"mode": ["standard", "dynadetect"]},
                 color_discrete_map=mode_colors
             )
+
         else:
             fig = px.scatter(
                 df, x=x, y=y,
@@ -224,38 +226,33 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
                 symbol='dataset',
                 facet_col=secondary_group,
                 facet_col_wrap=min(3, df[secondary_group].nunique()),
-                height=400,
+                height=700,
                 category_orders={"mode": ["standard", "dynadetect"]},
                 color_discrete_map=mode_colors
             )
+
+        # Update all subplots' x-axes
+        for i in range(1, len(fig.data) + 1):
+            xaxis_key = f'xaxis{i}' if i > 1 else 'xaxis'
+            fig.update_layout({
+                xaxis_key: {
+                    'type': 'category',
+                    'categoryorder': 'array',
+                    'categoryarray': tick_values,
+                    'ticktext': tick_text,
+                    'tickvals': tick_values,
+                    'title': {'text': "Poison Rate"},
+                    'showticklabels': True
+                }
+            })
         
         # Update axis ranges based on data and metric type
         if y in ['accuracy', 'precision', 'recall', 'f1']:
             fig.update_layout(yaxis_range=[0, 1])
         
-        # Update axis labels and ticks with proper handling of clean baselines
-        if x == 'poison_rate' or y == 'poison_rate':
-            axis_config = dict(
-                type='category',
-                categoryorder='array',
-                categoryarray=tick_values,
-                ticktext=tick_text,
-                tickvals=tick_values
-            )
-            
-            if x == 'poison_rate':
-                fig.update_layout(
-                    xaxis_title="Poison Rate",
-                    xaxis=axis_config
-                )
-            if y == 'poison_rate':
-                fig.update_layout(
-                    yaxis_title="Poison Rate",
-                    yaxis=axis_config
-                )
-        
+        # Ensure x-axis labels are visible on all subplots
         fig.update_layout(
-            margin=dict(l=20, r=20, t=40, b=20),
+            margin=dict(l=20, r=20, t=40, b=50),  # Increase bottom margin
             showlegend=True,
             legend=dict(
                 yanchor="top",
@@ -273,13 +270,12 @@ def create_plot(df: pd.DataFrame, plot_type: str, x: str, y: str, color: str = N
         return None
 
 def get_plot_download_formats():
-    """Return available plot download formats."""
+    """Return available plot download formats with icons."""
     return {
-        "HTML": "html",
-        "PNG (High DPI)": "png",
-        "SVG": "svg",
-        "PDF (High DPI)": "pdf",
-        "JPEG (High DPI)": "jpg"
+        "png": {"icon": "📸", "mime": "image/png"},
+        "svg": {"icon": "🎨", "mime": "image/svg+xml"},
+        "pdf": {"icon": "📄", "mime": "application/pdf"},
+        "html": {"icon": "🌐", "mime": "text/html"}
     }
 
 def download_plot(fig, format_type: str):
@@ -386,7 +382,7 @@ def create_improvement_plot(df: pd.DataFrame, metric: str, plot_type: str = "Bar
         yaxis_title=f"Absolute {metric.title()} Improvement",
         yaxis2_title="Relative Improvement (%)",
         showlegend=True,
-        height=400,
+        height=700,
         margin=dict(l=20, r=20, t=40, b=20),
         autosize=True
     )
@@ -654,36 +650,23 @@ def main():
                     if fig:
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
-                        # Add download controls for combined plot
+                        # Add single-click icon downloads
+                        st.write("Download:")
                         download_formats = get_plot_download_formats()
-                        col1, col2 = st.columns([2, 1])
-                        with col1:
-                            download_format = st.selectbox(
-                                "Download Format",
-                                options=list(download_formats.keys()),
-                                key='download_format_combined'
-                            )
-                        with col2:
-                            if st.button("Download Plot", key='download_button_combined'):
-                                format_type = download_formats[download_format]
-                                file_extension = format_type
-                                plot_data = download_plot(fig, format_type)
-                                
-                                if format_type == "html":
+                        
+                        # Create columns with empty space on sides for centering
+                        left_spacer, center_content, right_spacer = st.columns([2, 1, 2])
+                        with center_content:
+                            cols = st.columns(len(download_formats))
+                            for col, (format_type, format_info) in zip(cols, download_formats.items()):
+                                with col:
+                                    plot_data = download_plot(fig, format_type)
                                     st.download_button(
-                                        label="Click to Download",
+                                        label=format_info["icon"],
                                         data=plot_data,
-                                        file_name=f"plot_combined.{file_extension}",
-                                        mime="text/html",
-                                        key='download_link_combined'
-                                    )
-                                else:
-                                    st.download_button(
-                                        label="Click to Download",
-                                        data=plot_data,
-                                        file_name=f"plot_combined.{file_extension}",
-                                        mime=f"image/{format_type}",
-                                        key='download_link_combined'
+                                        file_name=f"plot_{dataset}_{metric}.{format_type}",
+                                        mime=format_info["mime"],
+                                        key=f'download_{dataset}_{format_type}'
                                     )
                 else:
                     # Create separate plots for each dataset
@@ -708,36 +691,23 @@ def main():
                         if fig:
                             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                             
-                            # Add download controls below plot
+                            # Add single-click icon downloads
+                            st.write("Download:")
                             download_formats = get_plot_download_formats()
-                            col1, col2 = st.columns([2, 1])
-                            with col1:
-                                download_format = st.selectbox(
-                                    "Download Format",
-                                    options=list(download_formats.keys()),
-                                    key=f'download_format_{dataset}'  # Unique key for each dataset plot
-                                )
-                            with col2:
-                                if st.button("Download Plot", key=f'download_button_{dataset}'):  # Unique key for each dataset plot
-                                    format_type = download_formats[download_format]
-                                    file_extension = format_type
-                                    plot_data = download_plot(fig, format_type)
-                                    
-                                    if format_type == "html":
+                            
+                            # Create columns with empty space on sides for centering
+                            left_spacer, center_content, right_spacer = st.columns([2, 1, 2])
+                            with center_content:
+                                cols = st.columns(len(download_formats))
+                                for col, (format_type, format_info) in zip(cols, download_formats.items()):
+                                    with col:
+                                        plot_data = download_plot(fig, format_type)
                                         st.download_button(
-                                            label="Click to Download",
+                                            label=format_info["icon"],
                                             data=plot_data,
-                                            file_name=f"plot_{dataset}_{metric}_{color_by}.{file_extension}",
-                                            mime="text/html",
-                                            key=f'download_link_{dataset}'
-                                        )
-                                    else:
-                                        st.download_button(
-                                            label="Click to Download",
-                                            data=plot_data,
-                                            file_name=f"plot_{dataset}_{metric}_{color_by}.{file_extension}",
-                                            mime=f"image/{format_type}",
-                                            key=f'download_link_{dataset}'
+                                            file_name=f"plot_{dataset}_{metric}.{format_type}",
+                                            mime=format_info["mime"],
+                                            key=f'download_{dataset}_{format_type}'
                                         )
                         
                         # Add separator between plots if not the last dataset

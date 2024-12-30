@@ -9,6 +9,13 @@
    - GPU-accelerated SVM
    - RandomForest with early stopping
    - Basic Decision Tree and KNN implementations
+   - Removed feature/adaptive-dynadetect branch
+   - Added gradient ascent attack to evaluation framework
+   - Fixed poison rate visualization consistency
+   - Set PNG as default plot download format
+   - Fixed x-axis labels across all subplots
+   - Added one-click icon downloads for plots
+   - Centered download buttons for better UI
 
 2. **Dataset Handling**
 
