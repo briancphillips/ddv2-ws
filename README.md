@@ -1,31 +1,35 @@
 # DynaDetect v2
 
-A machine learning evaluation framework focused on model robustness and security assessment, with particular emphasis on adversarial attack detection and mitigation.
+A high-performance machine learning framework focused on GPU-accelerated model implementations and robust security assessment, featuring advanced adversarial attack detection and mitigation strategies.
 
 ## Core Features
 
-- **Model Support**:
+- **GPU-Accelerated Models**:
 
   - DDKNN (Dynamic Distance-based k-Nearest Neighbors)
-  - GPU-accelerated LogisticRegression
-  - GPU-accelerated SVM
-  - RandomForest with early stopping
-  - Decision Trees
-  - K-Nearest Neighbors
+    - Gradient-based attack support
+    - Soft voting with temperature parameter
+    - Distance-weighted predictions
+  - GPU-optimized implementations of:
+    - SVM with early stopping
+    - Decision Trees with gradient support
+    - Random Forest with batch processing
+    - KNN with efficient distance computation
 
-- **Evaluation Capabilities**:
+- **Advanced Training Framework**:
 
-  - Label flipping attack assessment
-  - Model performance metrics (accuracy, precision, recall, F1)
-  - Per-class performance analysis
-  - Latency measurements
-  - Resource utilization tracking
-
-- **Dataset Handling**:
-  - Built-in GTSRB dataset support
-  - Feature extraction caching
-  - Data poisoning capabilities
+  - Robust feature selection and anomaly detection
+  - Automatic mixed precision training
+  - Sample weight computation with caching
+  - GPU-accelerated Local Outlier Factor
   - Efficient batch processing
+
+- **Performance Optimization**:
+  - CUDA acceleration for traditionally CPU-bound algorithms
+  - Memory-efficient batch processing
+  - Feature caching system
+  - Automatic mixed precision support
+  - Resource monitoring and optimization
 
 ## Quick Start
 
@@ -43,7 +47,7 @@ pip install -r requirements.txt
 2. **Run Evaluation**:
 
 ```bash
-# Full evaluation
+# Full evaluation with GPU acceleration
 python experiments/run_full_evaluation.py
 
 # Test mode (reduced configurations)
@@ -54,15 +58,15 @@ python experiments/run_full_evaluation.py --test
 
 ```
 dynadetectv2/
-├── core/           # Core ML implementations
-│   ├── models.py   # Model implementations
-│   ├── dataset.py  # Dataset handling
-│   └── trainer.py  # Training orchestration
-├── evaluation/     # Evaluation framework
-│   ├── evaluator.py # Evaluation logic
-│   └── runner.py   # Experiment execution
-├── config/        # Configuration management
-└── attacks/       # Attack implementations
+├── core/                     # Core ML implementations
+│   ├── models.py            # GPU-accelerated model implementations
+│   ├── dataset.py           # Dataset handling and feature extraction
+│   └── trainer.py           # Training orchestration with GPU support
+├── evaluation/              # Evaluation framework
+│   ├── evaluator.py        # Performance and security evaluation
+│   └── runner.py           # Experiment execution
+├── config/                 # Configuration management
+└── attacks/                # Attack implementations
 
 experiments/
 ├── run_full_evaluation.py  # Main evaluation script
@@ -72,24 +76,32 @@ experiments/
 
 ## Results and Logging
 
-- Results are stored in CSV format in the `results/` directory
-- Logs are maintained in the `logs/` directory with automatic archiving
-- Each run creates timestamped files for both results and logs
+- Comprehensive performance metrics stored in CSV format
+- Automatic resource usage monitoring (CPU, GPU, memory)
+- Detailed logging with timestamp-based organization
+- Automatic log archiving and management
 
 ## Configuration
 
-The system uses a configuration-driven approach through `ConfigurationManager`:
+The system uses a configuration-driven approach:
 
-- Dataset configurations (GTSRB supported)
-- Model parameters
-- Evaluation modes (standard, dynadetect)
-- Attack parameters (label flipping types, poison rates)
+- Model-specific parameters (temperature, batch size, etc.)
+- GPU optimization settings
+- Dataset configurations
+- Training parameters
+- Attack configurations
 
 ## Development Status
 
-This is an active research project. The current implementation focuses on:
+This is an active research project focusing on:
 
-- Model robustness evaluation
-- Label flipping attack assessment
+- GPU acceleration of traditional ML algorithms
+- Advanced adversarial attack detection
 - Performance optimization for large-scale evaluations
-- Resource utilization monitoring
+- Resource-efficient model implementations
+
+## Hardware Requirements
+
+- CUDA-capable GPU recommended
+- Sufficient GPU memory for batch processing
+- Fast storage for feature caching
