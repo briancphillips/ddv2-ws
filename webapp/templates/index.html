@@ -807,20 +807,12 @@
           const statusArea = document.getElementById("status-area");
           const icon = this.querySelector("svg");
 
-          if (statusArea.style.transform === "translateX(400px)") {
+          if (statusArea.style.transform === "translateX(500px)") {
             statusArea.style.transform = "translateX(0)";
             icon.style.transform = "rotate(0deg)";
-            icon.innerHTML = `<path
-              fill-rule="evenodd"
-              d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
-            />`;
           } else {
-            statusArea.style.transform = "translateX(400px)";
+            statusArea.style.transform = "translateX(500px)";
             icon.style.transform = "rotate(180deg)";
-            icon.innerHTML = `<path
-              fill-rule="evenodd"
-              d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
-            />`;
           }
         });
 
@@ -828,12 +820,25 @@
         const statusArea = document.getElementById("status-area");
         const icon = statusToggle.querySelector("svg");
         statusArea.style.transition = "transform 0.3s ease-in-out";
-        statusArea.style.transform = "translateX(400px)";
+        statusArea.style.transform = "translateX(500px)";
         icon.style.transform = "rotate(180deg)";
 
         // Function to show notifications
         function showNotification(message, type) {
           const statusContent = document.getElementById("status-content");
+
+          // Remove existing notifications with the same message
+          const existingNotifications =
+            statusContent.querySelectorAll(".status-message");
+          existingNotifications.forEach((notification) => {
+            const messageText = notification.querySelector(
+              ".message-content span"
+            ).textContent;
+            if (messageText === message) {
+              notification.remove();
+            }
+          });
+
           const notification = document.createElement("div");
           notification.className = `status-message ${type}`;
 

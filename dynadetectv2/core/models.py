@@ -251,8 +251,21 @@ class LogisticRegressionWrapper(BaseModel):
                 sample_weight = torch.FloatTensor(sample_weight)
 
             # Initialize model
-            n_classes = len(torch.unique(y))
+            unique_labels = torch.unique(y)
+            n_classes = len(unique_labels)
             self.logger.info(f"Number of unique classes: {n_classes}")
+            
+            # Create label mapping
+            self.label_map = {label.item(): idx for idx, label in enumerate(unique_labels)}
+            self.inverse_label_map = {idx: label for label, idx in self.label_map.items()}
+            
+            # Map labels to consecutive integers starting from 0
+            mapped_labels = torch.tensor([self.label_map[label.item()] for label in y], device=self.device)
+            
+            # Validate labels are within range
+            if not torch.all((mapped_labels >= 0) & (mapped_labels < n_classes)):
+                raise ValueError(f"Labels must be within range [0, {n_classes-1}]. Got labels in range [{mapped_labels.min()}, {mapped_labels.max()}]")
+
             self._init_model(X.shape[1], n_classes)
 
             # Scale features
@@ -263,7 +276,7 @@ class LogisticRegressionWrapper(BaseModel):
             self.logger.info(f"Scaling time: {time.time() - start_scaling:.2f}s")
 
             # Create data loaders
-            dataset = TensorDataset(X, y)
+            dataset = TensorDataset(X, mapped_labels)
             train_size = int((1 - self.validation_fraction) * len(dataset))
             val_size = len(dataset) - train_size
             train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
@@ -306,7 +319,7 @@ class LogisticRegressionWrapper(BaseModel):
                 
                 if self.verbose:
                     self.logger.info(f"Epoch {epoch + 1}/{self.max_iter}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
-                
+
                 # Early stopping
                 if self.early_stopping:
                     if avg_val_loss < best_val_loss - self.tol:
@@ -336,7 +349,9 @@ class LogisticRegressionWrapper(BaseModel):
             with torch.no_grad():
                 outputs = self.model(X)
                 predictions = torch.argmax(outputs, dim=1)
-            return predictions.cpu().numpy()
+                # Map predictions back to original labels
+                mapped_predictions = torch.tensor([self.inverse_label_map[pred.item()] for pred in predictions])
+            return mapped_predictions.cpu().numpy()
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")
             raise
@@ -654,7 +669,8 @@ class RandomForestWrapper(BaseModel):
             mapped_labels = torch.tensor([self.label_map[label.item()] for label in y], device=self.device)
             
             # Validate labels are within range
-            assert torch.all((mapped_labels >= 0) & (mapped_labels < n_classes)), "Labels must be within valid range"
+            if not torch.all((mapped_labels >= 0) & (mapped_labels < n_classes)):
+                raise ValueError(f"Labels must be within range [0, {n_classes-1}]. Got labels in range [{mapped_labels.min()}, {mapped_labels.max()}]")
             
             self.logger.info(f"Number of unique classes: {n_classes}")
             self._init_forest(X.shape[1], n_classes)

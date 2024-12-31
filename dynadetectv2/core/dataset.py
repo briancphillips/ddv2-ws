@@ -345,35 +345,54 @@ class DatasetHandler:
             
         labels = np.array(labels)  # Ensure labels is a numpy array
         unique_labels = np.unique(labels)
-        original_labels = labels.copy()
+        
+        # Create label mapping to ensure consecutive integers from 0
+        label_map = {label: idx for idx, label in enumerate(unique_labels)}
+        inverse_label_map = {idx: label for label, idx in label_map.items()}
+        
+        # Map labels to consecutive integers
+        mapped_labels = np.array([label_map[label] for label in labels])
+        n_classes = len(unique_labels)
+        
+        original_labels = mapped_labels.copy()
         num_to_poison = int(len(labels) * poison_rate)
-        new_labels = labels.copy()
+        new_labels = mapped_labels.copy()
         poisoned_classes = set()
 
         if mode == 'random_to_random':
             poison_indices = np.random.choice(len(labels), num_to_poison, replace=False)
             for idx in poison_indices:
-                new_label = np.random.choice([l for l in unique_labels if l != labels[idx]])
+                new_label = np.random.choice([l for l in range(n_classes) if l != mapped_labels[idx]])
                 new_labels[idx] = new_label
-                poisoned_classes.add(int(labels[idx]))
+                poisoned_classes.add(int(mapped_labels[idx]))
                 poisoned_classes.add(int(new_label))
         elif mode == 'random_to_target':
             if target_class is None:
                 raise ValueError("target_class must be specified for 'random_to_target' mode.")
+            mapped_target = label_map.get(target_class)
+            if mapped_target is None:
+                raise ValueError(f"target_class {target_class} not found in labels")
             poison_indices = np.random.choice(len(labels), num_to_poison, replace=False)
             for idx in poison_indices:
-                if labels[idx] != target_class:
-                    new_labels[idx] = target_class
-                    poisoned_classes.add(int(labels[idx]))
-                    poisoned_classes.add(int(target_class))
+                if mapped_labels[idx] != mapped_target:
+                    new_labels[idx] = mapped_target
+                    poisoned_classes.add(int(mapped_labels[idx]))
+                    poisoned_classes.add(mapped_target)
         elif mode == 'source_to_target':
             if source_class is None or target_class is None:
                 raise ValueError("Both source_class and target_class must be specified for 'source_to_target' mode.")
             if source_class == target_class:
                 raise ValueError("source_class and target_class must be different.")
                 
+            mapped_source = label_map.get(source_class)
+            mapped_target = label_map.get(target_class)
+            if mapped_source is None:
+                raise ValueError(f"source_class {source_class} not found in labels")
+            if mapped_target is None:
+                raise ValueError(f"target_class {target_class} not found in labels")
+                
             # Get indices of samples in source class
-            source_indices = np.where(labels == source_class)[0]
+            source_indices = np.where(mapped_labels == mapped_source)[0]
             num_source_samples = len(source_indices)
             
             # Calculate the number of samples to flip, limited by available samples
@@ -382,8 +401,8 @@ class DatasetHandler:
             
             # Log detailed information about the flipping operation
             logging.info(f"Label flipping details:")
-            logging.info(f"- Source class: {source_class}")
-            logging.info(f"- Target class: {target_class}")
+            logging.info(f"- Source class: {source_class} (mapped to {mapped_source})")
+            logging.info(f"- Target class: {target_class} (mapped to {mapped_target})")
             logging.info(f"- Available samples in source class: {num_source_samples}")
             logging.info(f"- Requested samples to poison: {num_to_poison}")
             logging.info(f"- Actual samples to flip: {num_to_flip}")
@@ -393,15 +412,17 @@ class DatasetHandler:
             if num_to_flip > 0:
                 # Randomly select indices to flip
                 flip_indices = np.random.choice(source_indices, num_to_flip, replace=False)
-                new_labels[flip_indices] = target_class
-                poisoned_classes.add(int(source_class))
-                poisoned_classes.add(int(target_class))
+                new_labels[flip_indices] = mapped_target
+                poisoned_classes.add(mapped_source)
+                poisoned_classes.add(mapped_target)
                 logging.info(f"Successfully flipped {num_to_flip} labels from class {source_class} to {target_class}")
             else:
                 logging.warning(f"No labels were flipped: insufficient samples in source class {source_class}")
         else:
             raise ValueError("Invalid mode specified for label flipping.")
 
+        # Map labels back to original space
+        final_labels = np.array([inverse_label_map[label] for label in new_labels])
         num_poisoned = np.sum(original_labels != new_labels)
         logging.info(f"Total number of labels flipped: {num_poisoned}")
 
@@ -415,8 +436,8 @@ class DatasetHandler:
         }
         
         # Cache the results
-        self._label_flip_cache[cache_key] = (new_labels.astype(np.int64), attack_params)
-        return new_labels.astype(np.int64), attack_params
+        self._label_flip_cache[cache_key] = (final_labels.astype(np.int64), attack_params)
+        return final_labels.astype(np.int64), attack_params
 
     def apply_label_flipping(self, dataset, poison_rate, flip_type='random_to_random'):
         """Apply label flipping attack to the dataset.
