@@ -5,7 +5,7 @@ Experiment runner for DynaDetect v2.
 import logging
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
 
 from ..config import ExperimentConfig
 from ..core.dataset import DatasetHandler
@@ -13,19 +13,18 @@ from .evaluator import DatasetEvaluator
 from ..core.models import ModelFactory
 
 class ExperimentRunner:
-    """Handles experiment execution and coordination."""
+    """Runner for DynaDetect experiments."""
     
-    def __init__(self, config: ExperimentConfig, test_mode: bool = False):
+    def __init__(self, config: ExperimentConfig):
         """
-        Initialize ExperimentRunner.
+        Initialize experiment runner.
         
         Args:
             config: Experiment configuration
-            test_mode: Whether running in test mode
         """
         self.config = config
-        self.test_mode = test_mode
         self.logger = logging.getLogger(__name__)
+        self.progress_callback: Optional[Callable[[str, str, str, int], None]] = None
         
     def run(self, timestamp: Optional[str] = None) -> None:
         """
@@ -38,14 +37,6 @@ class ExperimentRunner:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
         self.logger.info("Starting experiment run")
-        self.logger.info(f"Test mode: {self.test_mode}")
-        
-        total_datasets = len(self.config.datasets)
-        total_classifiers = len(self.config.classifiers)
-        total_modes = len(self.config.modes)
-        total_iterations = self.config.iterations
-        total_combinations = total_datasets * total_classifiers * total_modes * total_iterations
-        current_combination = 0
         
         # Run evaluation for each dataset configuration
         for dataset_config in self.config.datasets:
@@ -59,11 +50,10 @@ class ExperimentRunner:
                 # Run for each mode
                 for mode in self.config.modes:
                     # Run for each iteration
-                    for iteration in range(total_iterations):
-                        current_combination += 1
-                        progress = (current_combination / total_combinations) * 100
+                    for iteration in range(self.config.iterations):
+                        if self.progress_callback:
+                            self.progress_callback(dataset_config.name, classifier_name, mode, iteration)
                         
-                        self.logger.info(f"\nProgress: {progress:.1f}% - Evaluating {dataset_config.name} with {classifier_name} ({mode} mode, iteration {iteration + 1}/{total_iterations})")
                         evaluator = DatasetEvaluator(dataset_config, classifier_name, mode=mode)
                         evaluator.run_evaluation(iteration=iteration, timestamp=timestamp)
                 

@@ -51,7 +51,7 @@ pip install -r requirements.txt
 python experiments/run_full_evaluation.py
 
 # Test mode (reduced configurations)
-python experiments/run_full_evaluation.py --test
+python experiments/run_full_evaluation.py
 ```
 
 ## Project Structure

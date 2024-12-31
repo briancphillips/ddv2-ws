@@ -1,286 +1,110 @@
-"""Dataset handling for DynaDetect v2."""
+"""Dataset handling and feature extraction."""
 
-from typing import Optional, Tuple, List, Dict, Any
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset
-from torchvision import datasets, transforms, models
-import numpy as np
-import logging
-from dataclasses import dataclass
-import pandas as pd
 import os
-from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split
+import logging
+import torch
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, datasets
+import torch.nn as nn
+from typing import Tuple, Optional, Dict
+from ..config import DatasetConfig
+import torchvision
+from torchvision.datasets import GTSRB
+from torch.utils.data import DataLoader, Subset
 import shutil
-import requests
-import zipfile
-from PIL import Image
-import math
-import torch.nn.functional as F
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-class BasicBlock(nn.Module):
-    """Basic block for WideResNet."""
-    def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
-        super(BasicBlock, self).__init__()
-        self.bn1 = nn.BatchNorm2d(in_planes)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.conv1 = nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                              padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_planes)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(out_planes, out_planes, kernel_size=3, stride=1,
-                              padding=1, bias=False)
-        self.droprate = dropRate
-        self.equalInOut = (in_planes == out_planes)
-        self.convShortcut = (not self.equalInOut) and nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride,
-                                                               padding=0, bias=False) or None
-
-    def forward(self, x):
-        if not self.equalInOut:
-            x = self.relu1(self.bn1(x))
-        else:
-            out = self.relu1(self.bn1(x))
-        out = self.relu2(self.bn2(self.conv1(out if self.equalInOut else x)))
-        if self.droprate > 0:
-            out = F.dropout(out, p=self.droprate, training=self.training)
-        out = self.conv2(out)
-        return torch.add(x if self.equalInOut else self.convShortcut(x), out)
-
-class NetworkBlock(nn.Module):
-    """Layer container for WideResNet."""
-    def __init__(self, nb_layers, in_planes, out_planes, block, stride, dropRate=0.0):
-        super(NetworkBlock, self).__init__()
-        self.layer = self._make_layer(block, in_planes, out_planes, nb_layers, stride, dropRate)
-
-    def _make_layer(self, block, in_planes, out_planes, nb_layers, stride, dropRate):
-        layers = []
-        for i in range(nb_layers):
-            layers.append(block(i == 0 and in_planes or out_planes, out_planes, i == 0 and stride or 1, dropRate))
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.layer(x)
-
-class WideResNet(nn.Module):
-    """WideResNet implementation."""
-    def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0):
-        super(WideResNet, self).__init__()
-        nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
-        assert (depth - 4) % 6 == 0, 'depth should be 6n+4'
-        n = (depth - 4) // 6
-        block = BasicBlock
-        
-        # 1st conv before any network block
-        self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1, padding=1, bias=False)
-        
-        # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
-        
-        # 2nd block
-        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
-        
-        # 3rd block
-        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
-        
-        # global average pooling and classifier
-        self.bn1 = nn.BatchNorm2d(nChannels[3])
-        self.relu = nn.ReLU(inplace=True)
-        self.fc = nn.Linear(nChannels[3], num_classes)
-        self.nChannels = nChannels[3]
-
-        # Initialize weights
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.bias.data.zero_()
-
-    def forward(self, x):
-        out = self.conv1(x)
-        out = self.block1(out)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = self.relu(self.bn1(out))
-        out = F.avg_pool2d(out, 8)
-        out = out.view(-1, self.nChannels)
-        return self.fc(out)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class FeatureExtractor(nn.Module):
     """Feature extractor using pretrained models."""
     def __init__(self, dataset_name: str):
         super(FeatureExtractor, self).__init__()
         self.dataset_name = dataset_name
+        self.logger = logging.getLogger(__name__)
         
+        # Enable autocast for mixed precision
+        self.use_amp = torch.cuda.is_available()
+        
+        # Initialize model based on dataset
         if dataset_name == "CIFAR100":
-            # Use WRN-40-4 for CIFAR100
-            self.model = WideResNet(depth=40, num_classes=100, widen_factor=4)
-            self.load_pretrained_wrn()
+            import torchvision.models as models
+            self.model = models.resnet18(weights='IMAGENET1K_V1')
             # Remove the final classification layer
             self.model = nn.Sequential(*list(self.model.children())[:-1])
         elif dataset_name == "GTSRB":
-            # Use WRN-16-8 for GTSRB
-            self.model = WideResNet(depth=16, num_classes=43, widen_factor=8)
+            import torchvision.models as models
+            self.model = models.resnet18(weights='IMAGENET1K_V1')
             # Remove the final classification layer
             self.model = nn.Sequential(*list(self.model.children())[:-1])
-        else:
-            # Use ResNet18 for other datasets
-            self.model = models.resnet18(pretrained=True)
+        else:  # ImageNette
+            import torchvision.models as models
+            self.model = models.resnet18(weights='IMAGENET1K_V1')
             # Remove the final classification layer
             self.model = nn.Sequential(*list(self.model.children())[:-1])
         
+        # Move model to device and set to eval mode
         self.model = self.model.to(device)
         self.model.eval()
-
-    def forward(self, x):
-        with torch.cuda.amp.autocast():
+        
+        # Log model information
+        self.logger.info(f"Initialized feature extractor for {dataset_name}")
+        if torch.cuda.is_available():
+            self.logger.info(f"Model moved to GPU: {torch.cuda.get_device_name(0)}")
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract features from input tensor.
+        
+        Args:
+            x: Input tensor of shape (batch_size, channels, height, width)
+            
+        Returns:
+            Features tensor of shape (batch_size, feature_dim)
+        """
+        if self.use_amp:
+            with torch.cuda.amp.autocast():
+                features = self.model(x)
+                if isinstance(features, tuple):
+                    features = features[0]
+                features = features.reshape(features.size(0), -1)
+                return features
+        else:
             features = self.model(x)
             if isinstance(features, tuple):
                 features = features[0]
             features = features.reshape(features.size(0), -1)
             return features
 
-    def load_pretrained_wrn(self):
-        """Load pretrained weights for WideResNet."""
-        try:
-            # Create directory for pretrained models if it doesn't exist
-            os.makedirs("pretrained_models", exist_ok=True)
-            weights_path = os.path.join("pretrained_models", "wrn40_4_cifar100.pth")
-            
-            # Download weights if they don't exist
-            if not os.path.exists(weights_path):
-                url = "https://huggingface.co/datasets/brianhie/wrn-weights/resolve/main/wrn40_4_cifar100.pth"
-                response = requests.get(url)
-                response.raise_for_status()
-                with open(weights_path, "wb") as f:
-                    f.write(response.content)
-                logging.info(f"Downloaded pretrained weights to {weights_path}")
-            
-            # Load the weights
-            state_dict = torch.load(weights_path, map_location=device)
-            self.model.load_state_dict(state_dict)
-            logging.info("Successfully loaded pretrained weights")
-        except Exception as e:
-            logging.warning(f"Could not load pretrained weights: {str(e)}")
-
-@dataclass
-class DatasetSpecs:
-    """Specifications for a dataset."""
-    name: str
-    dataset_type: str
-    default_sample_size: int
-    min_sample_size: int
-    max_sample_size: int
-    min_samples_per_class: int
-    num_classes: int
-
-
-class NumericalDataset(Dataset):
-    """Dataset class for numerical data."""
-    
-    def __init__(self, X: np.ndarray, y: np.ndarray):
-        """Initialize dataset.
-        
-        Args:
-            X: Input features
-            y: Labels
-        """
-        self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.long)
-        self.targets = self.y
-    
-    def __len__(self) -> int:
-        return len(self.X)
-    
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.X[idx], self.y[idx]
-
-
-class GTSRBDataset(Dataset):
-    """GTSRB dataset class using torchvision."""
-    
-    def __init__(self, root_dir, train=True, transform=None, val_split=0.2):
-        """Initialize GTSRB dataset.
-        
-        Args:
-            root_dir: Root directory containing the dataset
-            train: Whether to use training or validation split
-            transform: Optional transform to be applied to images
-            val_split: Fraction of training data to use for validation
-        """
-        self.root_dir = root_dir
-        self.train = train
-        self.transform = transform
-        
-        # Use torchvision's GTSRB dataset
-        base_dataset = datasets.GTSRB(
-            root=root_dir,
-            split='train',  # Always load training data for train/val split
-            transform=transform,
-            download=True
-        )
-        
-        if train is not None:  # Handle train/val split
-            # Get all targets
-            all_targets = []
-            for _, target in base_dataset:
-                all_targets.append(target)
-            all_targets = torch.tensor(all_targets)
-            
-            # Split into train and validation sets
-            train_size = int((1 - val_split) * len(base_dataset))
-            val_size = len(base_dataset) - train_size
-            train_dataset, val_dataset = torch.utils.data.random_split(
-                base_dataset, 
-                [train_size, val_size],
-                generator=torch.Generator().manual_seed(42)
-            )
-            
-            # Set the dataset based on train parameter
-            self.dataset = train_dataset if train else val_dataset
-            
-            # Store targets for the split
-            indices = self.dataset.indices
-            self.targets = [all_targets[i].item() for i in indices]
-        else:  # Use test set
-            test_dataset = datasets.GTSRB(
-                root=root_dir,
-                split='test',
-                transform=transform,
-                download=True
-            )
-            self.dataset = test_dataset
-            # Get all targets for test set
-            all_targets = []
-            for _, target in test_dataset:
-                all_targets.append(target)
-            self.targets = all_targets
-        
-    def __len__(self):
-        return len(self.dataset)
-    
-    def __getitem__(self, idx):
-        img, target = self.dataset[idx]
-        return img, target
-
-
 class DatasetHandler:
-    """Handler for dataset loading and preprocessing."""
-    def __init__(self, dataset_name: str, data_dir: str = ".datasets"):
-        """Initialize dataset handler."""
-        self.dataset_name = dataset_name
-        self.data_dir = data_dir
-        self.is_train = True  # Default to True for training transforms
-        self.feature_extractor = FeatureExtractor(dataset_name).to(device)
-        self.feature_extractor.eval()
-        self._feature_cache = {}  # Cache for extracted features
-        self._label_flip_cache = {}  # Cache for flipped labels
+    """Handles dataset loading and feature extraction."""
+    
+    def __init__(self, config: DatasetConfig):
+        """Initialize dataset handler.
+        
+        Args:
+            config: Dataset configuration
+        """
+        self.config = config
+        self.dataset_name = config.name
+        self.batch_size = config.batch_size
+        self.feature_extractor = None
+        self._feature_cache = {}
+        self._label_flip_cache = {}  # Initialize label flip cache
+        self.logger = logging.getLogger(__name__)
+        self.data_dir = ".datasets"  # Default data directory
+        os.makedirs(self.data_dir, exist_ok=True)  # Ensure data directory exists
+        
+        # Initialize feature extractor
+        self._init_feature_extractor()
+
+    def _init_feature_extractor(self):
+        """Initialize feature extractor."""
+        if self.dataset_name == "CIFAR100":
+            self.feature_extractor = FeatureExtractor("CIFAR100").to(device)
+        elif self.dataset_name == "GTSRB":
+            self.feature_extractor = FeatureExtractor("GTSRB").to(device)
+        else:  # ImageNette
+            self.feature_extractor = FeatureExtractor("ImageNette").to(device)
 
     def get_transform(self) -> transforms.Compose:
         """Get transforms for dataset."""
@@ -324,46 +148,133 @@ class DatasetHandler:
     def get_train_dataset(self) -> Dataset:
         """Get training dataset."""
         self.is_train = True
+        dataset = None
+        
         if self.dataset_name == "CIFAR100":
-            return datasets.CIFAR100(root=self.data_dir, train=True, download=True,
-                                   transform=self.get_transform())
+            try:
+                dataset = datasets.CIFAR100(root=os.path.join(self.data_dir, "cifar100"), 
+                                       train=True, 
+                                       download=True,
+                                       transform=self.get_transform())
+            except Exception as e:
+                # If loading fails, try to clean up and redownload
+                shutil.rmtree(os.path.join(self.data_dir, "cifar100"), ignore_errors=True)
+                dataset = datasets.CIFAR100(root=os.path.join(self.data_dir, "cifar100"), 
+                                       train=True, 
+                                       download=True,
+                                       transform=self.get_transform())
         elif self.dataset_name == "GTSRB":
-            return datasets.GTSRB(root=self.data_dir, split="train", download=True,
-                                transform=self.get_transform())
+            try:
+                dataset = datasets.GTSRB(root=os.path.join(self.data_dir, "gtsrb"), 
+                                    split="train", 
+                                    download=True,
+                                    transform=self.get_transform())
+            except Exception as e:
+                # If loading fails, try to clean up and redownload
+                shutil.rmtree(os.path.join(self.data_dir, "gtsrb"), ignore_errors=True)
+                dataset = datasets.GTSRB(root=os.path.join(self.data_dir, "gtsrb"), 
+                                    split="train", 
+                                    download=True,
+                                    transform=self.get_transform())
         else:  # ImageNette
-            return datasets.ImageFolder(root=os.path.join(self.data_dir, "imagenette/train"),
-                                     transform=self.get_transform())
+            try:
+                dataset = datasets.ImageFolder(root=os.path.join(self.data_dir, "imagenette/train"),
+                                         transform=self.get_transform())
+            except Exception as e:
+                # If loading fails, try to clean up and redownload
+                shutil.rmtree(os.path.join(self.data_dir, "imagenette"), ignore_errors=True)
+                dataset = datasets.ImageFolder(root=os.path.join(self.data_dir, "imagenette/train"),
+                                         transform=self.get_transform())
+                                     
+        # Apply sample size if specified
+        if hasattr(self.config, 'sample_size') and self.config.sample_size is not None:
+            total_samples = len(dataset)
+            sample_size = min(self.config.sample_size, total_samples)
+            indices = torch.randperm(total_samples)[:sample_size]
+            dataset = Subset(dataset, indices)
+            self.logger.info(f"Using {sample_size} samples from training dataset")
+            
+        return dataset
 
     def get_val_dataset(self) -> Dataset:
         """Get validation dataset."""
         self.is_train = False
+        dataset = None
+        
         if self.dataset_name == "CIFAR100":
-            return datasets.CIFAR100(root=self.data_dir, train=False, download=True,
-                                   transform=self.get_transform())
+            try:
+                dataset = datasets.CIFAR100(root=os.path.join(self.data_dir, "cifar100"), 
+                                       train=False, 
+                                       download=True,
+                                       transform=self.get_transform())
+            except Exception as e:
+                # If loading fails, try to clean up and redownload
+                shutil.rmtree(os.path.join(self.data_dir, "cifar100"), ignore_errors=True)
+                dataset = datasets.CIFAR100(root=os.path.join(self.data_dir, "cifar100"), 
+                                       train=False, 
+                                       download=True,
+                                       transform=self.get_transform())
         elif self.dataset_name == "GTSRB":
-            return datasets.GTSRB(root=self.data_dir, split="test", download=True,
-                                transform=self.get_transform())
+            try:
+                dataset = datasets.GTSRB(root=os.path.join(self.data_dir, "gtsrb"), 
+                                    split="test", 
+                                    download=True,
+                                    transform=self.get_transform())
+            except Exception as e:
+                # If loading fails, try to clean up and redownload
+                shutil.rmtree(os.path.join(self.data_dir, "gtsrb"), ignore_errors=True)
+                dataset = datasets.GTSRB(root=os.path.join(self.data_dir, "gtsrb"), 
+                                    split="test", 
+                                    download=True,
+                                    transform=self.get_transform())
         else:  # ImageNette
-            return datasets.ImageFolder(root=os.path.join(self.data_dir, "imagenette/val"),
-                                     transform=self.get_transform())
+            try:
+                dataset = datasets.ImageFolder(root=os.path.join(self.data_dir, "imagenette/val"),
+                                         transform=self.get_transform())
+            except Exception as e:
+                # If loading fails, try to clean up and redownload
+                shutil.rmtree(os.path.join(self.data_dir, "imagenette"), ignore_errors=True)
+                dataset = datasets.ImageFolder(root=os.path.join(self.data_dir, "imagenette/val"),
+                                         transform=self.get_transform())
+                                     
+        # Apply sample size if specified
+        if hasattr(self.config, 'sample_size') and self.config.sample_size is not None:
+            total_samples = len(dataset)
+            sample_size = min(self.config.sample_size, total_samples)
+            indices = torch.randperm(total_samples)[:sample_size]
+            dataset = Subset(dataset, indices)
+            self.logger.info(f"Using {sample_size} samples from validation dataset")
+            
+        return dataset
 
-    def extract_features(self, dataset: torch.utils.data.Dataset) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract features from dataset using pretrained ResNet."""
-        # Generate cache key based on dataset object id and length
-        cache_key = (id(dataset), len(dataset))
+    def extract_features(self, dataset) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Extract features from dataset using feature extractor.
+        
+        Args:
+            dataset: Dataset to extract features from
+            
+        Returns:
+            Tuple of (features, labels)
+        """
+        # Generate cache key based on dataset and config
+        cache_key = f"{self.dataset_name}_{len(dataset)}"
+        
+        # Check if features are already cached
         if cache_key in self._feature_cache:
-            logging.info("Using cached features")
             return self._feature_cache[cache_key]
+            
+        self.logger.info(f"Extracting features from {len(dataset)} samples...")
         
-        total_samples = len(dataset)
-        # Set batch size based on dataset
-        batch_size = 32 if self.dataset_name == "GTSRB" else 128
-        num_workers = 2 if self.dataset_name == "GTSRB" else 4
-        
-        logging.info(f"Extracting features from {total_samples} samples...")
-        
-        # Create DataLoader for batch processing
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+        # Configure DataLoader for optimal GPU usage
+        loader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,  # Disable multiprocessing for now
+            pin_memory=True,
+            persistent_workers=False,
+            prefetch_factor=None
+        )
         
         features_list = []
         labels_list = []

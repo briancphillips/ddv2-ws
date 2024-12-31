@@ -16,7 +16,7 @@ import time
 # Add parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dynadetectv2.config import ConfigurationManager, TEST_SAMPLE_SIZES
+from dynadetectv2.config import ConfigurationManager
 from dynadetectv2.evaluation import ExperimentRunner
 
 def setup_logging(timestamp):
@@ -51,8 +51,8 @@ def setup_logging(timestamp):
     
     return log_file
 
-def cleanup_test_files():
-    """Clean up results and logs from previous test runs and kill any running processes."""
+def cleanup_previous_runs():
+    """Clean up results and logs from previous runs and kill any running processes."""
     # Kill any running evaluation processes except the current one
     current_pid = os.getpid()
     try:
@@ -148,7 +148,6 @@ def cleanup_test_files():
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Run evaluation of DynaDetect v2')
-    parser.add_argument('--test', action='store_true', help='Run in test mode with reduced configurations')
     return parser.parse_args()
 
 def signal_handler(signum, frame):
@@ -165,9 +164,9 @@ def main():
         args = parse_args()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Archive previous files (in both test and regular modes)
+        # Archive previous files
         print("\nArchiving previous files...")
-        cleanup_test_files()
+        cleanup_previous_runs()
         print("Archiving finished - starting evaluation\n")
         
         # Set up logging
@@ -178,9 +177,9 @@ def main():
         print("Initializing configuration manager...")
         config_manager = ConfigurationManager()
         
-        # Get appropriate configurations based on mode
+        # Get configurations
         print("Getting configurations...")
-        config = config_manager.get_test_configs() if args.test else config_manager.get_full_configs()
+        config = config_manager.get_full_configs()
         
         # Set the results filename with timestamp
         config.results_file = f'experiment_results_{timestamp}.csv'
@@ -188,13 +187,13 @@ def main():
         print(f"\nEvaluation Plan:")
         print(f"- Datasets: {[d.name for d in config.datasets]}")
         print(f"- Classifiers: {config.classifiers}")
-        print(f"- Sample sizes: {TEST_SAMPLE_SIZES if args.test else 'Full'}")
+        print(f"- Sample sizes: Full")
         print(f"- Modes: {config.modes}")
         print(f"- Iterations: {config.iterations}")
         print("\nStarting evaluation...")
         
         # Initialize and run experiment
-        runner = ExperimentRunner(config=config, test_mode=args.test)
+        runner = ExperimentRunner(config=config)
         runner.run(timestamp=timestamp)  # Pass the timestamp to the runner
         print("\nExperiment completed successfully")
         print(f"Results saved to: {os.path.join('results', config.results_file)}")

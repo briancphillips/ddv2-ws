@@ -386,9 +386,21 @@ class SVMWrapper(BaseModel):
     def _hinge_loss(self, outputs, targets):
         """Compute multi-class hinge loss."""
         batch_size = outputs.size(0)
-        correct_scores = outputs[torch.arange(batch_size), targets].view(-1, 1)
+        n_classes = outputs.size(1)
+        
+        # Ensure targets are within valid range
+        targets = torch.clamp(targets, 0, n_classes - 1)
+        
+        # Get the predicted scores for the correct classes
+        correct_scores = outputs[torch.arange(batch_size, device=self.device), targets].view(-1, 1)
+        
+        # Calculate margins
         margin_diff = outputs - correct_scores + self.margin
-        margin_diff[torch.arange(batch_size), targets] = 0
+        
+        # Zero out the margin for correct classes
+        margin_diff[torch.arange(batch_size, device=self.device), targets] = 0
+        
+        # Sum the positive margins and normalize
         loss = torch.sum(torch.clamp(margin_diff, min=0)) / batch_size
         return loss
 
@@ -406,8 +418,17 @@ class SVMWrapper(BaseModel):
                 sample_weight = torch.FloatTensor(sample_weight)
 
             # Initialize model
-            n_classes = len(torch.unique(y))
+            unique_labels = torch.unique(y)
+            n_classes = len(unique_labels)
             self.logger.info(f"Number of unique classes: {n_classes}")
+            
+            # Create label mapping
+            self.label_map = {label.item(): idx for idx, label in enumerate(unique_labels)}
+            self.inverse_label_map = {idx: label for label, idx in self.label_map.items()}
+            
+            # Map labels to consecutive integers starting from 0
+            y = torch.tensor([self.label_map[label.item()] for label in y], device=self.device)
+            
             self._init_model(X.shape[1], n_classes)
 
             # Scale features
@@ -502,7 +523,9 @@ class SVMWrapper(BaseModel):
             with torch.no_grad():
                 outputs = self.model(X)
                 predictions = torch.argmax(outputs, dim=1)
-            return predictions.cpu().numpy()
+                # Map predictions back to original labels
+                mapped_predictions = torch.tensor([self.inverse_label_map[pred.item()] for pred in predictions])
+            return mapped_predictions.cpu().numpy()
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")
             raise
@@ -622,12 +645,22 @@ class RandomForestWrapper(BaseModel):
                 sample_weight = torch.FloatTensor(sample_weight).to(self.device)
 
             # Initialize forest
-            n_classes = len(torch.unique(y))
+            unique_labels = torch.unique(y)
+            n_classes = len(unique_labels)
+            self.label_map = {label.item(): idx for idx, label in enumerate(unique_labels)}
+            self.inverse_label_map = {idx: label for label, idx in self.label_map.items()}
+            
+            # Map labels to consecutive integers starting from 0
+            mapped_labels = torch.tensor([self.label_map[label.item()] for label in y], device=self.device)
+            
+            # Validate labels are within range
+            assert torch.all((mapped_labels >= 0) & (mapped_labels < n_classes)), "Labels must be within valid range"
+            
             self.logger.info(f"Number of unique classes: {n_classes}")
             self._init_forest(X.shape[1], n_classes)
 
             # Create data loaders
-            dataset = TensorDataset(X, y)
+            dataset = TensorDataset(X, mapped_labels)
             train_size = int((1 - self.validation_fraction) * len(dataset))
             val_size = len(dataset) - train_size
             train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
@@ -660,10 +693,14 @@ class RandomForestWrapper(BaseModel):
                     # Average predictions across all chunks
                     ensemble_output = torch.stack(chunk_outputs).mean(dim=0)
                     
+                    # Validate predictions shape matches labels
+                    assert ensemble_output.shape[1] == n_classes, f"Model output dimension {ensemble_output.shape[1]} does not match number of classes {n_classes}"
+                    
                     # Compute loss
                     loss = criterion(ensemble_output, batch_y)
                     if sample_weight is not None:
-                        batch_weights = sample_weight[train_dataset.indices][n_batches*self.batch_size:(n_batches+1)*self.batch_size]
+                        batch_indices = train_dataset.indices[n_batches*self.batch_size:(n_batches+1)*self.batch_size]
+                        batch_weights = sample_weight[batch_indices]
                         loss = loss * batch_weights.mean()
                     
                     # Backward pass and optimization
@@ -734,8 +771,11 @@ class RandomForestWrapper(BaseModel):
                 outputs = torch.stack([tree(X) for tree in self.trees])
                 ensemble_output = outputs.mean(dim=0)
                 predictions = torch.argmax(ensemble_output, dim=1)
+                
+                # Map predictions back to original labels
+                mapped_predictions = torch.tensor([self.inverse_label_map[pred.item()] for pred in predictions])
             
-            return predictions.cpu().numpy()
+            return mapped_predictions.cpu().numpy()
             
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")
@@ -885,45 +925,48 @@ class KNeighborsWrapper(BaseModel):
 
 
 class ModelFactory:
-    """Factory class for creating model instances."""
+    """Factory for creating model instances."""
     
     @staticmethod
     def create_model(classifier_name: str) -> ClassifierWrapper:
         """Create a model instance based on the classifier name."""
-        logging.info(f"Creating model for classifier: {classifier_name}")
-        if classifier_name == 'SVM':
-            model = SVMWrapper()
-            logging.info(f"Created SVMWrapper instance: {model.__class__.__name__}")
-            return model
-        elif classifier_name == 'LogisticRegression':
+        if classifier_name in ['RF', 'RandomForest']:
+            return RandomForestWrapper(
+                n_estimators=50,
+                max_depth=8,
+                learning_rate=0.001,
+                batch_size=512,
+                n_epochs=10,
+                weight_decay=0.01,
+                validation_fraction=0.05,
+                early_stopping=True,
+                n_iter_no_change=3,
+                tol=0.005,
+                verbose=True
+            )
+        elif classifier_name in ['LR', 'LogisticRegression']:
             return LogisticRegressionWrapper()
-        elif classifier_name == 'RandomForest':
-            return RandomForestWrapper()
-        elif classifier_name == 'KNeighbors':
+        elif classifier_name in ['SVM', 'SupportVectorMachine']:
+            return SVMWrapper()
+        elif classifier_name in ['DT', 'DecisionTree']:
+            return DecisionTreeWrapper()
+        elif classifier_name in ['KNN', 'KNeighbors']:
             return KNeighborsWrapper()
         else:
             raise ValueError(f"Unknown classifier: {classifier_name}")
-
+    
     @staticmethod
     def get_classifier(model_name: str, **kwargs):
-        """Get a classifier based on name.
-        
-        Args:
-            model_name: Name of the classifier to create
-            **kwargs: Additional arguments for classifier creation
-            
-        Returns:
-            Created classifier instance
-        """
-        model_map = {
-            'LogisticRegression': LogisticRegressionWrapper,
-            'SVM': SVMWrapper,
-            'RandomForest': RandomForestWrapper,
-            'KNeighbors': KNeighborsWrapper,
-            'DecisionTree': DecisionTreeWrapper
-        }
-        
-        if model_name not in model_map:
-            raise ValueError(f"Unknown model: {model_name}")
-            
-        return model_map[model_name](**kwargs)
+        """Get a classifier instance with custom parameters."""
+        if model_name == 'RF':
+            return RandomForestWrapper(**kwargs)
+        elif model_name in ['LR', 'LogisticRegression']:
+            return LogisticRegressionWrapper(**kwargs)
+        elif model_name == 'SVM':
+            return SVMWrapper(**kwargs)
+        elif model_name == 'DT':
+            return DecisionTreeWrapper(**kwargs)
+        elif model_name == 'KNN':
+            return KNeighborsWrapper(**kwargs)
+        else:
+            raise ValueError(f"Unknown classifier: {model_name}")

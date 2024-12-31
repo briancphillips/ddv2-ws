@@ -57,13 +57,6 @@ DATASET_SIZES = {
     'ImageNette': 9469  # Full training set size
 }
 
-# Test sample sizes (reduced for faster testing)
-TEST_SAMPLE_SIZES = {
-    'CIFAR100': 5000,
-    'GTSRB': 5000,
-    'ImageNette': 5000
-}
-
 CLASSIFIERS = [
     'SVM',
     'LogisticRegression',
@@ -79,72 +72,6 @@ class ConfigurationManager:
     def __init__(self):
         """Initialize ConfigurationManager."""
         self.seed = random.randint(1, 10000)
-        
-    def get_test_configs(self) -> ExperimentConfig:
-        """Get test configurations with reduced dataset sizes and all attack types."""
-        # Create a list to store all dataset configs
-        all_datasets = []
-        
-        # For each dataset, create configurations for each attack type
-        for name, config in DATASET_CONFIGS.items():
-            # Add label flipping configurations
-            for flip_mode in ATTACK_METHODS['label_flipping']['modes']:
-                # Set target and source classes based on flip mode
-                target_class = 0 if flip_mode in ['random_to_target', 'source_to_target'] else None
-                source_class = 1 if flip_mode == 'source_to_target' else None
-                
-                dataset_config = DatasetConfig(
-                    name=name,
-                    dataset_type=config['type'],
-                    sample_size=TEST_SAMPLE_SIZES[name],
-                    attack_params={
-                        'poison_rates': POISON_RATES,
-                        'type': 'label_flipping',
-                        'mode': flip_mode,
-                        'target_class': target_class,
-                        'source_class': source_class
-                    }
-                )
-                all_datasets.append(dataset_config)
-            
-            # Add PGD configuration
-            dataset_config = DatasetConfig(
-                name=name,
-                dataset_type=config['type'],
-                sample_size=TEST_SAMPLE_SIZES[name],
-                attack_params={
-                    'poison_rates': POISON_RATES,
-                    'type': 'pgd',
-                    'eps': ATTACK_METHODS['pgd']['eps'],
-                    'alpha': ATTACK_METHODS['pgd']['alpha'],
-                    'iters': ATTACK_METHODS['pgd']['iters']
-                }
-            )
-            all_datasets.append(dataset_config)
-
-            # Add Gradient Ascent configuration
-            dataset_config = DatasetConfig(
-                name=name,
-                dataset_type=config['type'],
-                sample_size=TEST_SAMPLE_SIZES[name],
-                attack_params={
-                    'poison_rates': POISON_RATES,
-                    'type': 'gradient_ascent',
-                    'eps': ATTACK_METHODS['gradient_ascent']['eps'],
-                    'alpha': ATTACK_METHODS['gradient_ascent']['alpha'],
-                    'iters': ATTACK_METHODS['gradient_ascent']['iters']
-                }
-            )
-            all_datasets.append(dataset_config)
-        
-        return ExperimentConfig(
-            datasets=all_datasets,
-            classifiers=CLASSIFIERS,
-            modes=MODES,
-            iterations=1,
-            seed=self.seed,
-            results_file='test_results.csv'
-        )
         
     def get_full_configs(self) -> ExperimentConfig:
         """Get full experiment configurations."""
