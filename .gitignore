@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Dataset files
+.datasets/
+*.tar.gz
+
+# IDE files
+.vscode/
+.idea/
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Data and cache files
+*.pkl
+*.h5
+*.npy
+*.npz
+
+# Log files
+logs/*
+!logs/archive/
+logs/archive/*
+*.log
+nohup.out
+
+# Experiment results
+results/*
+!results/archive/
+results/archive/*
+*.csv
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Deleted/archived files
+del/

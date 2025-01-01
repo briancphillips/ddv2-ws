@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DynaDetect v2 - Experiment Configuration</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+      }
+      .card {
+        background-color: #2d2d2d;
+        border: 1px solid #404040;
+        margin-bottom: 1.5rem;
+      }
+      .card-header {
+        background-color: #363636;
+        border-bottom: 1px solid #404040;
+        padding: 1rem;
+      }
+      .form-control,
+      .form-select {
+        background-color: #333;
+        border: 1px solid #404040;
+        color: #e0e0e0;
+      }
+      .form-control:focus,
+      .form-select:focus {
+        background-color: #404040;
+        border-color: #0d6efd;
+        color: #e0e0e0;
+      }
+      .btn-primary {
+        background-color: #0d6efd;
+        border: none;
+        padding: 0.75rem 2rem;
+      }
+      .btn-primary:hover {
+        background-color: #0b5ed7;
+      }
+      .form-check-input:checked {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+      }
+      .dataset-options {
+        background-color: #333;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-top: 0.5rem;
+      }
+      .container {
+        max-width: 1800px;
+        padding: 2rem;
+      }
+      .section-title {
+        color: #0d6efd;
+        margin-bottom: 1.5rem;
+      }
+      .config-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+      .dataset-config {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 1rem;
+        align-items: start;
+      }
+      .dataset-options {
+        margin-top: 0;
+        margin-left: 0;
+      }
+      .attack-config {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+      }
+      .poison-rates-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        gap: 0.5rem;
+      }
+      .progress-container {
+        position: fixed;
+        bottom: 2rem;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 1600px;
+        z-index: 1000;
+        background: rgba(45, 45, 45, 0.95);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .tooltip {
+        position: absolute;
+        z-index: 1070;
+        display: block;
+        margin: 0;
+        font-family: var(--bs-font-sans-serif);
+        font-style: normal;
+        font-weight: 400;
+        line-height: 1.5;
+        text-align: left;
+        text-decoration: none;
+        text-shadow: none;
+        text-transform: none;
+        letter-spacing: normal;
+        word-break: normal;
+        word-spacing: normal;
+        white-space: normal;
+        line-break: auto;
+        font-size: 0.875rem;
+        word-wrap: break-word;
+        opacity: 0;
+      }
+      .tooltip.show {
+        opacity: 0.9;
+      }
+      .btn-outline-secondary {
+        color: #6c757d;
+        border-color: #6c757d;
+      }
+      .btn-outline-secondary:hover {
+        color: #fff;
+        background-color: #6c757d;
+        border-color: #6c757d;
+      }
+      #status-area {
+        width: 500px;
+      }
+      /* Status Area Styles */
+      #status-toggle-container {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 30px;
+        height: 40px;
+        background-color: #363636;
+        border-left: 1px solid #404040;
+        border-bottom: 1px solid #404040;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1001;
+        cursor: pointer;
+      }
+      #status-toggle-container:hover {
+        background-color: #404040;
+      }
+      #status-area {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 500px;
+        max-height: 100vh;
+        z-index: 1000;
+        background-color: #2d2d2d;
+        border-left: 1px solid #404040;
+        display: flex;
+        flex-direction: column;
+        transform: translateX(0);
+        transition: transform 0.3s ease-in-out;
+      }
+      #status-header {
+        padding: 1rem;
+        background-color: #363636;
+        border-bottom: 1px solid #404040;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      #status-content {
+        padding: 1rem;
+        overflow-y: auto;
+        flex-grow: 1;
+      }
+      #status-toggle {
+        background: none;
+        border: none;
+        color: #e0e0e0;
+        cursor: pointer;
+      }
+      #status-toggle:hover {
+        color: #0d6efd;
+      }
+      .status-message {
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+        border-radius: 0.5rem;
+        background-color: #363636;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        transition: opacity 0.3s ease-out;
+      }
+      .status-message .message-content {
+        flex-grow: 1;
+        margin-right: 1rem;
+      }
+      .status-message .close-btn {
+        background: none;
+        border: none;
+        color: inherit;
+        font-size: 1.2rem;
+        padding: 0;
+        cursor: pointer;
+        opacity: 0.7;
+      }
+      .status-message .close-btn:hover {
+        opacity: 1;
+      }
+      .status-message.success {
+        background-color: rgba(25, 135, 84, 0.2);
+        border: 1px solid #198754;
+        color: #20c997;
+      }
+      .status-message.error {
+        background-color: rgba(220, 53, 69, 0.2);
+        border: 1px solid #dc3545;
+        color: #ff6b6b;
+      }
+      .status-message.info {
+        background-color: rgba(13, 202, 240, 0.2);
+        border: 1px solid #0dcaf0;
+        color: #0dcaf0;
+      }
+      .fade-out {
+        opacity: 0;
+      }
+      .status-area {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 5px;
+        background-color: #f8f9fa;
+      }
+      .notification {
+        padding: 10px 15px;
+        margin-bottom: 10px;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .notification:last-child {
+        margin-bottom: 0;
+      }
+      .notification.info {
+        background-color: #cce5ff;
+        border: 1px solid #b8daff;
+        color: #004085;
+      }
+      .notification.success {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+      }
+      .notification.error {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+      }
+      .notification .timestamp {
+        font-size: 0.85em;
+        color: #666;
+        margin-left: 10px;
+      }
+      .notification .close-btn {
+        cursor: pointer;
+        padding: 0 5px;
+        font-size: 1.2em;
+        line-height: 1;
+        color: inherit;
+        opacity: 0.7;
+        background: none;
+        border: none;
+      }
+      .notification .close-btn:hover {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="section-title mb-4">DynaDetect v2 Configuration</h1>
+
+      <form id="experimentForm">
+        <div class="config-grid">
+          <!-- Dataset Configuration -->
+          <div class="card">
+            <div
+              class="card-header d-flex justify-content-between align-items-center"
+            >
+              <h4 class="mb-0">Dataset Configuration</h4>
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="toggle-all-datasets"
+                />
+                <label class="form-check-label" for="toggle-all-datasets"
+                  >Select All</label
+                >
+              </div>
+            </div>
+            <div class="card-body">
+              <div id="datasetConfigs">
+                {% for name, config in datasets.items() %}
+                <div class="dataset-config mb-3">
+                  <div class="form-check">
+                    <input
+                      class="form-check-input dataset-checkbox"
+                      type="checkbox"
+                      value="{{ name }}"
+                      id="dataset_{{ name }}"
+                    />
+                    <label class="form-check-label" for="dataset_{{ name }}">
+                      {{ name }}
+                      <small class="text-muted d-block"
+                        >{{ config.type }}, {{ config.num_classes }}
+                        classes</small
+                      >
+                    </label>
+                  </div>
+                  <div class="dataset-options" style="display: none">
+                    <div class="mb-3">
+                      <label class="form-label">Sample Size</label>
+                      <div class="input-group">
+                        <input
+                          type="number"
+                          class="form-control form-control-sm sample-size"
+                          placeholder="e.g. 1000"
+                        />
+                        <button
+                          class="btn btn-outline-secondary btn-sm"
+                          type="button"
+                          data-bs-toggle="tooltip"
+                          title="Sample size determines how many examples to use from the dataset"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            class="bi bi-question-circle"
+                            viewBox="0 0 16 16"
+                          >
+                            <path
+                              d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"
+                            />
+                            <path
+                              d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      class="attack-config p-3 rounded"
+                      style="background: rgba(13, 110, 253, 0.1)"
+                    >
+                      <div>
+                        <label class="form-label">Attack Type</label>
+                        <div class="input-group">
+                          <select
+                            class="form-select form-select-sm attack-type"
+                          >
+                            {% for attack_type in attack_methods.keys() %}
+                            <option value="{{ attack_type }}">
+                              {{ attack_type }}
+                            </option>
+                            {% endfor %}
+                          </select>
+                          <button
+                            class="btn btn-outline-secondary btn-sm"
+                            type="button"
+                            data-bs-toggle="tooltip"
+                            title="Type of attack to simulate"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              fill="currentColor"
+                              class="bi bi-question-circle"
+                              viewBox="0 0 16 16"
+                            >
+                              <path
+                                d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"
+                              />
+                              <path
+                                d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label class="form-label">Poison Rates</label>
+                        <div class="poison-rates-container">
+                          {% for rate in poison_rates %}
+                          <div class="form-check form-check-inline">
+                            <input
+                              class="form-check-input poison-rate"
+                              type="checkbox"
+                              value="{{ rate }}"
+                              id="poison_rate_{{ loop.index }}"
+                              checked
+                            />
+                            <label
+                              class="form-check-label"
+                              for="poison_rate_{{ loop.index }}"
+                            >
+                              {{ "%.0f"|format(rate * 100) }}%
+                            </label>
+                          </div>
+                          {% endfor %}
+                        </div>
+                        <small class="text-muted"
+                          >Percentage of data to poison</small
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Classifier Selection -->
+          <div class="card">
+            <div
+              class="card-header d-flex justify-content-between align-items-center"
+            >
+              <h4 class="mb-0">Classifier Selection</h4>
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="toggle-all-classifiers"
+                  checked
+                />
+                <label class="form-check-label" for="toggle-all-classifiers"
+                  >Select All</label
+                >
+              </div>
+            </div>
+            <div class="card-body">
+              {% for classifier in classifiers %}
+              <div class="form-check mb-2">
+                <input
+                  class="form-check-input classifier-checkbox"
+                  type="checkbox"
+                  value="{{ classifier }}"
+                  id="classifier_{{ classifier }}"
+                  checked
+                />
+                <label
+                  class="form-check-label"
+                  for="classifier_{{ classifier }}"
+                >
+                  {{ classifier }}
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- Mode and Settings -->
+          <div class="card">
+            <div class="card-header">
+              <h4 class="mb-0">Mode & Settings</h4>
+            </div>
+            <div class="card-body">
+              <!-- Mode Selection -->
+              <div class="mb-4">
+                <div
+                  class="d-flex justify-content-between align-items-center mb-3"
+                >
+                  <h5 class="mb-0">Mode Selection</h5>
+                  <div class="form-check">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      id="toggle-all-modes"
+                      checked
+                    />
+                    <label class="form-check-label" for="toggle-all-modes"
+                      >Select All</label
+                    >
+                  </div>
+                </div>
+                {% for mode in modes %}
+                <div class="form-check mb-2">
+                  <input
+                    class="form-check-input mode-checkbox"
+                    type="checkbox"
+                    value="{{ mode }}"
+                    id="mode_{{ mode }}"
+                    checked
+                  />
+                  <label class="form-check-label" for="mode_{{ mode }}">
+                    {{ mode }}
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+
+              <!-- General Settings -->
+              <div>
+                <h5 class="mb-3">General Settings</h5>
+                <div class="mb-3">
+                  <label for="iterations" class="form-label"
+                    >Number of Iterations</label
+                  >
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="iterations"
+                    value="1"
+                    min="1"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-container" style="display: none">
+          <div class="progress" style="height: 25px">
+            <div
+              class="progress-bar progress-bar-striped progress-bar-animated"
+              role="progressbar"
+              style="width: 0%"
+            ></div>
+          </div>
+          <small class="text-muted mt-1" id="progress-text"
+            >Processing...</small
+          >
+        </div>
+
+        <div class="text-center mt-4">
+          <button type="submit" id="startButton" class="btn btn-primary btn-lg">
+            Start Experiment
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Status Area -->
+    <div id="status-toggle-container">
+      <button id="status-toggle" title="Toggle notifications">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          fill="currentColor"
+          class="bi bi-chevron-right"
+          viewBox="0 0 16 16"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
+          />
+        </svg>
+      </button>
+    </div>
+    <div id="status-area">
+      <div id="status-header">
+        <h5 class="mb-0">Notifications</h5>
+      </div>
+      <div id="status-content"></div>
+    </div>
+
+    <!-- Experiment Status -->
+    <div
+      id="experiment-status"
+      class="position-fixed bottom-0 start-0 p-3"
+      style="display: none"
+    >
+      <div class="bg-dark text-light p-3 rounded">
+        <h5 class="mb-2">Experiment Status</h5>
+        <div class="d-flex align-items-center">
+          <div class="spinner-border spinner-border-sm me-2" role="status">
+            <span class="visually-hidden">Running...</span>
+          </div>
+          <span
+            >Experiment running (started at
+            <span id="experiment-time"></span>)</span
+          >
+        </div>
+        <div
+          class="mt-2 small text-warning"
+          id="gpu-status"
+          style="display: none"
+        >
+          GPU is currently in use by another process
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(
+          document.querySelectorAll('[data-bs-toggle="tooltip"]')
+        );
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // Initialize form submission handler
+        const form = document.getElementById("experimentForm");
+        const startButton = document.getElementById("startButton");
+        const statusPanel = document.getElementById("statusPanel");
+        const progressBar = document.querySelector(".progress-bar");
+        const progressText = document.querySelector(".progress-text");
+
+        function updateExperimentStatus() {
+          fetch("/status")
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.running) {
+                const progressContainer = document.querySelector(
+                  ".progress-container"
+                );
+                const progressBar = document.querySelector(".progress-bar");
+                const progressText = document.getElementById("progress-text");
+
+                // Show progress container when experiment is running
+                progressContainer.style.display = "block";
+
+                // Update progress if available
+                if (data.progress !== undefined) {
+                  const progress = Math.min(Math.max(data.progress, 0), 100);
+                  progressBar.style.width = `${progress}%`;
+                  progressBar.setAttribute("aria-valuenow", progress);
+                  progressText.textContent = `${Math.round(
+                    progress
+                  )}% Complete`;
+                }
+
+                // Handle button visibility based on experiment state
+                startButton.style.display = "none";
+              } else {
+                const progressContainer = document.querySelector(
+                  ".progress-container"
+                );
+                startButton.style.display = "block";
+                progressContainer.style.display = "none";
+              }
+
+              // Update status panel
+              if (data.messages && data.messages.length > 0) {
+                const lastMessage = data.messages[data.messages.length - 1];
+                showNotification(lastMessage.text, lastMessage.type);
+              }
+            })
+            .catch((error) => {
+              console.error("Error fetching status:", error);
+              startButton.style.display = "block";
+            });
+        }
+
+        // Start polling when form is submitted
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          startButton.style.display = "none"; // Hide button when starting
+
+          // Collect selected datasets
+          const selectedDatasets = [];
+          document
+            .querySelectorAll(".dataset-checkbox:checked")
+            .forEach((checkbox) => {
+              const config = checkbox.closest(".dataset-config");
+              const selectedPoisonRates = Array.from(
+                config.querySelectorAll(".poison-rate:checked")
+              ).map((rate) => parseFloat(rate.value));
+
+              selectedDatasets.push({
+                name: checkbox.value,
+                sample_size: config.querySelector(".sample-size").value || null,
+                attack_params: {
+                  type: config.querySelector(".attack-type").value,
+                  poison_rates: selectedPoisonRates,
+                },
+              });
+            });
+
+          // Collect selected classifiers and modes
+          const selectedClassifiers = Array.from(
+            document.querySelectorAll(".classifier-checkbox:checked")
+          ).map((cb) => cb.value);
+
+          const selectedModes = Array.from(
+            document.querySelectorAll(".mode-checkbox:checked")
+          ).map((cb) => cb.value);
+
+          // Build configuration object
+          const config = {
+            datasets: selectedDatasets,
+            classifiers: selectedClassifiers,
+            modes: selectedModes,
+            iterations: parseInt(document.getElementById("iterations").value),
+          };
+
+          // Show progress container
+          document.querySelector(".progress-container").style.display = "block";
+
+          // Send request
+          fetch("/start", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(config),
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.error) {
+                showNotification("Error: " + data.error, "error");
+                startButton.style.display = "block"; // Show button on error
+              } else if (data.success) {
+                showNotification("Experiment started successfully!", "success");
+                // Start polling for status updates
+                const statusInterval = setInterval(() => {
+                  fetch("/status")
+                    .then((response) => response.json())
+                    .then((statusData) => {
+                      if (!statusData.running) {
+                        clearInterval(statusInterval);
+                      }
+                      updateExperimentStatus();
+                    })
+                    .catch((error) => {
+                      console.error("Error polling status:", error);
+                      clearInterval(statusInterval);
+                    });
+                }, 1000); // Poll every second
+              }
+            })
+            .catch((error) => {
+              showNotification("Error: " + error.message, "error");
+              startButton.style.display = "block"; // Show button on error
+            });
+        });
+
+        // Initialize dataset checkboxes
+        document.querySelectorAll(".dataset-checkbox").forEach((checkbox) => {
+          checkbox.addEventListener("change", function () {
+            const options =
+              this.closest(".dataset-config").querySelector(".dataset-options");
+            options.style.display = this.checked ? "block" : "none";
+          });
+        });
+
+        // Toggle all datasets
+        document
+          .getElementById("toggle-all-datasets")
+          .addEventListener("change", function () {
+            document
+              .querySelectorAll(".dataset-checkbox")
+              .forEach((checkbox) => {
+                checkbox.checked = this.checked;
+                const options = checkbox
+                  .closest(".dataset-config")
+                  .querySelector(".dataset-options");
+                options.style.display = this.checked ? "block" : "none";
+              });
+          });
+
+        // Toggle all classifiers
+        document
+          .getElementById("toggle-all-classifiers")
+          .addEventListener("change", function () {
+            document
+              .querySelectorAll(".classifier-checkbox")
+              .forEach((checkbox) => {
+                checkbox.checked = this.checked;
+              });
+          });
+
+        // Toggle all modes
+        document
+          .getElementById("toggle-all-modes")
+          .addEventListener("change", function () {
+            document.querySelectorAll(".mode-checkbox").forEach((checkbox) => {
+              checkbox.checked = this.checked;
+            });
+          });
+
+        // Initialize status panel toggle
+        const statusToggle = document.getElementById("status-toggle");
+        statusToggle.addEventListener("click", function () {
+          const statusArea = document.getElementById("status-area");
+          const icon = this.querySelector("svg");
+
+          if (statusArea.style.transform === "translateX(500px)") {
+            statusArea.style.transform = "translateX(0)";
+            icon.style.transform = "rotate(0deg)";
+          } else {
+            statusArea.style.transform = "translateX(500px)";
+            icon.style.transform = "rotate(180deg)";
+          }
+        });
+
+        // Initialize status panel position and icon
+        const statusArea = document.getElementById("status-area");
+        const icon = statusToggle.querySelector("svg");
+        statusArea.style.transition = "transform 0.3s ease-in-out";
+        statusArea.style.transform = "translateX(500px)";
+        icon.style.transform = "rotate(180deg)";
+
+        // Function to show notifications
+        function showNotification(message, type) {
+          const statusContent = document.getElementById("status-content");
+
+          // Remove existing notifications with the same message
+          const existingNotifications =
+            statusContent.querySelectorAll(".status-message");
+          existingNotifications.forEach((notification) => {
+            const messageText = notification.querySelector(
+              ".message-content span"
+            ).textContent;
+            if (messageText === message) {
+              notification.remove();
+            }
+          });
+
+          const notification = document.createElement("div");
+          notification.className = `status-message ${type}`;
+
+          const messageContent = document.createElement("div");
+          messageContent.className = "message-content";
+
+          const text = document.createElement("span");
+          text.textContent = message;
+          messageContent.appendChild(text);
+
+          const timestamp = document.createElement("small");
+          timestamp.className = "text-muted d-block mt-1";
+          timestamp.textContent = new Date().toLocaleTimeString();
+          messageContent.appendChild(timestamp);
+
+          const closeBtn = document.createElement("button");
+          closeBtn.className = "close-btn";
+          closeBtn.innerHTML = "&times;";
+          closeBtn.onclick = function () {
+            notification.classList.add("fade-out");
+            setTimeout(() => notification.remove(), 300);
+          };
+
+          notification.appendChild(messageContent);
+          notification.appendChild(closeBtn);
+          statusContent.insertBefore(notification, statusContent.firstChild);
+        }
+
+        // Poll for updates more frequently while experiment is running
+        setInterval(updateExperimentStatus, 500);
+      });
+    </script>
+  </body>
+</html>
